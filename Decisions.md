@@ -219,6 +219,28 @@ This file documents the rationale behind key technical decisions made during the
 - Testable in isolation
 - Common pattern in Express applications
 
+### Core Data Layer Separation
+**Decision:** Use a shared Prisma client, repositories for data access, and services for validation and domain rules.
+**Rationale:**
+- Keeps Prisma queries out of future controllers and API routes.
+- Allows business rules, such as duplicate repository prevention and progress validation, to remain testable.
+- Prevents repeated Prisma Client construction and excess development connections.
+- Provides a clear location for future orchestration without implementing later milestones early.
+
+### Version-Controlled Prisma Migrations
+**Decision:** Commit Prisma migration files and preserve already-applied migration history.
+**Rationale:**
+- Every environment needs the same reproducible schema evolution path.
+- Editing an applied migration can cause environments to diverge.
+- The `RUNNING` to `INDEXING` terminology update uses a second migration rather than rewriting the initial migration.
+
+### Application-Level Database Errors
+**Decision:** Map Prisma failures to custom application errors before they reach Express error handling.
+**Rationale:**
+- Prevents raw database implementation details from reaching clients.
+- Produces consistent responses for conflicts, missing records, invalid references, and unexpected database failures.
+- Keeps error translation centralized rather than duplicating it in every repository.
+
 ## Security Decisions
 
 ### Helmet Middleware

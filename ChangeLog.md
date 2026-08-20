@@ -2,6 +2,32 @@
 
 This file tracks all changes made to the GitHub Knowledge Assistant project by the AI assistant.
 
+## [2026-08-21] Milestone 2: Database & Core Models
+
+### Database Schema and Migrations
+- **File:** `backend/prisma/schema.prisma`
+  - Added `User`, `Repository`, `RepositoryFile`, `IndexingJob`, `ChatSession`, and `Message` models.
+  - Added status/role enums, foreign keys, cascade deletion, unique constraints, and indexes.
+- **Files:** `backend/prisma/migrations/20260820184011_init/` and `backend/prisma/migrations/20260821190000_rename_running_job_status/`
+  - Added and applied the initial PostgreSQL schema migration.
+  - Added and applied a follow-up migration that renames `RUNNING` to `INDEXING`.
+- **Files:** `.gitignore`, `backend/.gitignore`
+  - Stopped ignoring Prisma migrations so schema history is version controlled.
+
+### Backend Data Layer
+- **File:** `backend/src/config/database.ts`
+  - Added a shared Prisma Client with development-safe global caching.
+- **Files:** `backend/src/repositories/`, `backend/src/services/`, and `backend/src/validators/`
+  - Added data-access repositories, core CRUD services, and Zod boundary validation for all six models.
+  - Added duplicate repository detection, relation-aware creates, and job-progress validation.
+- **Files:** `backend/src/utils/errors.ts`, `backend/src/utils/databaseError.ts`
+  - Added safe application-level mappings for Prisma conflicts, missing records, invalid references, and database failures.
+
+### Verification
+- **File:** `backend/src/test/database.test.ts`
+  - Added a database smoke test covering CRUD operations and relationships across all core models.
+  - Verified migration deployment, Prisma generation, schema validation, TypeScript compilation, and cleanup against local PostgreSQL.
+
 ## [2026-08-11] Milestone 1: Project Setup & Infrastructure
 
 ### Initial Project Structure
@@ -153,4 +179,3 @@ This file tracks all changes made to the GitHub Knowledge Assistant project by t
 
 #### Dependency Changes
 - Added/Removed/Updated package (version) - reason
-

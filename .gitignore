@@ -37,9 +37,6 @@ logs/
 # Docker
 *.dockerignore
 
-# Prisma
-backend/prisma/migrations/
-
 # Temporary files
 tmp/
 temp/

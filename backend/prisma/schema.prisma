@@ -1,5 +1,4 @@
 // Prisma schema for GitHub Knowledge Assistant
-// Database models will be defined in Milestone 2
 // This is the single source of truth for the database schema
 
 generator client {
@@ -11,4 +10,170 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Placeholder for models to be added in Milestone 2
+// Enums
+enum IndexingStatus {
+  PENDING
+  INDEXING
+  COMPLETED
+  FAILED
+}
+
+enum JobStatus {
+  PENDING
+  INDEXING
+  COMPLETED
+  FAILED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+// User model for future authentication
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  repositories Repository[]
+  chatSessions ChatSession[]
+
+  @@index([email])
+}
+
+// Repository model
+model Repository {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // GitHub metadata
+  githubOwner     String
+  githubRepo      String
+  githubUrl       String
+  description     String?
+  defaultBranch   String   @default("main")
+  stars           Int      @default(0)
+  forks           Int      @default(0)
+  primaryLanguage String?
+
+  // Repository statistics
+  fileCount       Int      @default(0)
+  indexedFileCount Int     @default(0)
+  chunkCount      Int      @default(0)
+
+  // Indexing status
+  indexingStatus  IndexingStatus @default(PENDING)
+  indexingError   String?
+
+  // Timestamps
+  githubCreatedAt DateTime?
+  githubUpdatedAt DateTime?
+  indexedAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  files          RepositoryFile[]
+  chatSessions   ChatSession[]
+  indexingJobs   IndexingJob[]
+
+  @@unique([userId, githubOwner, githubRepo])
+  @@index([userId])
+  @@index([indexingStatus])
+  @@index([githubOwner, githubRepo])
+}
+
+// Repository file model
+model RepositoryFile {
+  id            String   @id @default(uuid())
+  repositoryId  String
+  repository    Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  // File metadata
+  filePath      String
+  fileName      String
+  extension     String?
+  language      String?
+  fileSize      Int      @default(0)
+  sha           String?
+
+  // Content metadata
+  chunkCount    Int      @default(0)
+  indexedAt     DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([repositoryId, filePath])
+  @@index([repositoryId])
+  @@index([language])
+  @@index([extension])
+}
+
+// Indexing job model
+model IndexingJob {
+  id            String   @id @default(uuid())
+  repositoryId  String
+  repository    Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  // Job status
+  status        JobStatus @default(PENDING)
+  progress      Float    @default(0)
+  currentStep   String?
+  errorMessage  String?
+
+  // Job statistics
+  filesDiscovered Int    @default(0)
+  filesProcessed  Int    @default(0)
+  chunksCreated   Int    @default(0)
+  embeddingsGenerated Int @default(0)
+
+  // Timestamps
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([repositoryId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Chat session model
+model ChatSession {
+  id            String   @id @default(uuid())
+  repositoryId  String
+  repository    Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  messages      Message[]
+
+  @@index([repositoryId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// Message model
+model Message {
+  id            String   @id @default(uuid())
+  chatSessionId String
+  chatSession   ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+
+  role          MessageRole
+  content       String   @db.Text
+
+  // Future source metadata (JSON field for flexibility)
+  sources       Json?
+
+  createdAt     DateTime @default(now())
+
+  @@index([chatSessionId])
+  @@index([createdAt])
+}

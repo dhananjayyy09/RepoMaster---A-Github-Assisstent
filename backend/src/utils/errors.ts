@@ -38,3 +38,15 @@ export class InternalServerError extends AppError {
     super(500, message);
   }
 }
+
+export class DatabaseError extends AppError {
+  constructor(message: string = 'Database operation failed') {
+    super(500, message);
+  }
+}
+
+export class ConflictError extends AppError {
+  constructor(message: string = 'Resource conflict') {
+    super(409, message);
+  }
+}

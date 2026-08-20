@@ -10,7 +10,8 @@
     "type-check": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "test:db": "tsx src/test/database.test.ts"
   },
   "keywords": [],
   "author": "",

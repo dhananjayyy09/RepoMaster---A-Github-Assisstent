@@ -2,7 +2,7 @@
 
 This file documents the flow and interactions between different parts of the GitHub Knowledge Assistant codebase.
 
-## Current System Flow (Milestone 1)
+## Current System Flow (Milestones 1–2)
 
 ### Frontend Application Flow
 
@@ -119,6 +119,61 @@ If Validation Succeeds:
     └── Export typed config object
     ↓
 Config used throughout application
+```
+
+### Core Data Layer Flow
+
+The core data layer is not exposed as a public API yet. It is used by the database smoke test and is ready for future controllers.
+
+```
+Caller (test or future controller)
+    ↓
+Service (`src/services/`)
+    ├── Validate external input with Zod
+    ├── Apply small domain rules
+    │   ├── Reject duplicate repositories for a user
+    │   └── Require job progress from 0 to 100
+    ↓
+Repository (`src/repositories/`)
+    ↓
+Shared Prisma Client (`src/config/database.ts`)
+    ↓
+PostgreSQL
+    ├── User
+    ├── Repository
+    │   ├── RepositoryFile
+    │   ├── IndexingJob
+    │   └── ChatSession → Message
+    ↓
+Return typed Prisma model to caller
+```
+
+### Database Error Flow
+
+```
+Prisma operation fails
+    ↓
+Repository catches error
+    ↓
+`handleDatabaseError()` maps known Prisma codes
+    ├── Unique constraint → ConflictError (409)
+    ├── Missing record → NotFoundError (404)
+    ├── Invalid reference/input → ValidationError (400)
+    └── Other database failure → DatabaseError (500)
+    ↓
+Express error middleware returns the safe application error
+```
+
+### Deletion Flow
+
+```
+Delete User
+    ↓ cascade
+Delete owned Repositories and ChatSessions
+    ↓ cascade from Repository
+Delete RepositoryFiles, IndexingJobs, and Repository ChatSessions
+    ↓ cascade from ChatSession
+Delete Messages
 ```
 
 ---

@@ -32,9 +32,6 @@ Thumbs.db
 logs/
 *.log
 
-# Prisma
-prisma/migrations/
-
 # Temporary files
 tmp/
 temp/
