@@ -1,5 +1,5 @@
 # GitHub Knowledge Assistant
-
+ 
 An AI-powered platform for understanding and interacting with GitHub repositories using natural language and RAG (Retrieval-Augmented Generation).
 
 ## Project Description
