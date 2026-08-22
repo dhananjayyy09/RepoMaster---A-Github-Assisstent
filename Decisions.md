@@ -241,6 +241,186 @@ This file documents the rationale behind key technical decisions made during the
 - Produces consistent responses for conflicts, missing records, invalid references, and unexpected database failures.
 - Keeps error translation centralized rather than duplicating it in every repository.
 
+## GitHub Integration Decisions
+
+### GitHub REST API Choice
+**Decision:** Using GitHub REST API for repository metadata and file access
+**Rationale:**
+- Well-documented and stable API
+- Comprehensive coverage of repository operations
+- Rate limit headers provide quota information
+- No need for complex GraphQL queries for this use case
+- Simple HTTP client implementation
+- Industry standard for GitHub integration
+
+### GitHub Module Isolation
+**Decision:** Created dedicated GitHub module separate from business logic
+**Rationale:**
+- Keeps external API communication isolated
+- Easy to test GitHub client independently
+- Can swap GitHub API implementation if needed
+- Clear separation of concerns
+- Prevents GitHub-specific code from spreading through codebase
+- Follows single responsibility principle
+
+### GitHub Token Optional
+**Decision:** Made GitHub authentication token optional in configuration
+**Rationale:**
+- Allows development without personal access tokens
+- GitHub public API has generous rate limits for unauthenticated requests
+- Production can enable with environment variable
+- No barrier to entry for development
+- Security: tokens never committed to source control
+- Follows principle of secure defaults
+
+### URL Parsing with URL API
+**Decision:** Used browser URL API instead of pure regex for GitHub URL parsing
+**Rationale:**
+- More robust than regex for URL parsing
+- Handles edge cases automatically (encoding, normalization)
+- Easier to maintain and understand
+- Type-safe with TypeScript
+- Better error handling for malformed URLs
+- Leverages built-in browser/node APIs
+
+### Jest for Testing
+**Decision:** Selected Jest as testing framework for backend
+**Rationale:**
+- Built-in mocking capabilities for HTTP requests
+- Excellent TypeScript support via ts-jest
+- Zero configuration for most use cases
+- Fast test execution
+- Good snapshot testing for future use
+- Industry standard for Node.js testing
+- Easy to integrate with CI/CD
+
+### TypeScript Version for Jest Compatibility
+**Decision:** Downgraded TypeScript from 7.0.2 to 5.7.2 for ts-jest compatibility
+**Rationale:**
+- ts-jest had compatibility issues with TypeScript 7.x
+- TypeScript 5.7.2 is stable and well-supported
+- No loss of features needed for this project
+- Maintains type safety and developer experience
+- Resolves Jest compilation errors without workarounds
+
+### Error Prototype Chain Fix
+**Decision:** Added Object.setPrototypeOf calls to GitHub error constructors
+**Rationale:**
+- TypeScript/JavaScript instanceof checks require proper prototype chain
+- Custom error classes need explicit prototype setup
+- Ensures error handling works correctly with instanceof
+- Resolves Jest test failures expecting specific error types
+- Follows JavaScript best practices for custom errors
+- Prevents errors from being caught as generic AppError
+
+### Deterministic GitHub Tests
+**Decision:** Used mocked responses instead of real GitHub API calls in tests
+**Rationale:**
+- Tests run without external dependencies
+- No rate limit consumption during testing
+- Consistent test results regardless of GitHub status
+- Faster test execution
+- Can test error scenarios easily
+- Standard practice for external API testing
+- Prevents flaky tests due to network issues
+
+### Repository Metadata Mapping
+**Decision:** Created application-level `RepositoryMetadata` type separate from GitHub API response
+**Rationale:**
+- Decouples application from GitHub API structure changes
+- Provides clean, stable interface for rest of application
+- Only includes relevant fields needed by the application
+- Enables easy switching between GitHub API versions
+- Follows principle of isolation from external dependencies
+- Makes code more maintainable and testable
+
+### Git Trees API for Repository Tree
+**Decision:** Used GitHub Git Trees API with recursive=1 for repository tree retrieval
+**Rationale:**
+- Single API call retrieves entire repository structure
+- More efficient than multiple directory traversal calls
+- GitHub handles the recursion logic
+- Returns both files and directories in single response
+- Standard GitHub API for tree operations
+- Better performance than manual directory walking
+
+### Truncated Tree Handling
+**Decision:** Throw `GitHubTreeTruncatedError` immediately when GitHub returns truncated tree
+**Rationale:**
+- Prevents silent data loss in large repositories
+- Forces explicit handling of incomplete data
+- GitHub API limitation that cannot be worked around in simple way
+- Complex fallback crawling deferred to later milestones
+- Maintains data integrity by failing fast
+- Clear error communication to calling code
+
+### GitHub Contents API for File Retrieval
+**Decision:** Used GitHub Contents API for individual file content retrieval
+**Rationale:**
+- Official GitHub API for file operations
+- Returns Base64-encoded content ready for decoding
+- Provides file metadata (size, sha, encoding)
+- Supports ref parameter for branch-specific retrieval
+- Standard approach for GitHub file access
+- Better than raw git blob API for this use case
+
+### Base64 Decoding Approach
+**Decision:** Decode Base64 content to UTF-8 strings with the `decodeBase64Content()` utility, called by the GitHub service.
+**Rationale:**
+- GitHub API returns Base64-encoded content
+- Application needs text content for processing
+- A focused utility keeps decoding reusable and keeps the service responsible for orchestration
+- UTF-8 assumption reasonable for source code repositories
+- Centralized decoding logic, consistent behavior
+- Error handling at appropriate layer
+
+### GitHub API Version Constant
+**Decision:** Define the GitHub REST API version once as `GITHUB_API_VERSION` in the GitHub client.
+**Rationale:**
+- Prevents the version string from being duplicated across request code.
+- Makes a future API-version upgrade a one-line change.
+- Keeps all request-header configuration owned by the HTTP client.
+
+### Binary File Detection
+**Decision:** Check file type and encoding before attempting content processing
+**Rationale:**
+- Prevents attempting to decode binary files as text
+- GitHub API provides type field (file vs directory)
+- Encoding field indicates content format
+- Fail fast for unsupported content types
+- Defers complex binary file handling to later milestones
+- Maintains clean separation of concerns
+
+### Application-Level Type Boundary
+**Decision:** Maintain strict separation between GitHub API types and application types
+**Rationale:**
+- Rest of application should not depend on GitHub-specific structures
+- Enables easy replacement of GitHub API if needed
+- Cleaner interfaces for file processing and chunking
+- Better encapsulation of external API details
+- Follows dependency inversion principle
+- Makes code more maintainable and testable
+
+### Database Boundary
+**Decision:** Keep GitHub service completely independent of database operations
+**Rationale:**
+- GitHub service focuses solely on API communication
+- Database operations belong to orchestration layer
+- Enables flexible future data processing pipelines
+- Makes GitHub service reusable in different contexts
+- Clear separation of concerns
+- Easier to test GitHub functionality in isolation
+
+### Manual Verification Strategy
+**Decision:** Created separate manual verification script against real GitHub repository
+**Rationale:**
+- Validates integration with actual GitHub API
+- Tests against real-world repository structure
+- Confirms Base64 decoding works with real content
+- Separate from automated test suite to avoid dependencies
+- Provides confidence in implementation
+- Uses stable public repository (facebook/react) for reliability
+
 ## Security Decisions
 
 ### Helmet Middleware

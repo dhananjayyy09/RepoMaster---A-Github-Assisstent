@@ -2,7 +2,7 @@
 
 This file documents the flow and interactions between different parts of the GitHub Knowledge Assistant codebase.
 
-## Current System Flow (Milestones 1–2)
+## Current System Flow (Milestones 1–3B)
 
 ### Frontend Application Flow
 
@@ -146,6 +146,210 @@ PostgreSQL
     │   └── ChatSession → Message
     ↓
 Return typed Prisma model to caller
+```
+
+### GitHub URL Parsing Flow
+
+```
+User Input (GitHub repository URL)
+    ↓
+parseGitHubRepositoryUrl() in github.utils.ts
+    ↓
+Create URL object from input string
+    ↓
+Validate hostname is 'github.com'
+    ↓
+Extract and normalize pathname
+    ↓
+Split path into components
+    ↓
+Validate structure (owner/repo format)
+    ↓
+Remove .git suffix if present
+    ↓
+Check for invalid URL patterns (issues, pull, blob, tree, etc.)
+    ↓
+Zod schema validation
+    ↓
+Return typed result: { owner, repo, url }
+    ↓
+Or throw GitHubInvalidUrlError
+```
+
+### GitHub HTTP Client Flow
+
+```
+Service calls GitHub Client (get/post)
+    ↓
+Build request headers
+    ├── User-Agent header
+    ├── Accept header (application/vnd.github.v3+json)
+    ├── X-GitHub-Api-Version header (from GITHUB_API_VERSION)
+    └── Authorization header (if token provided)
+    ↓
+fetchWithTimeout with AbortController
+    ↓
+Fetch request to GitHub API
+    ↓
+Extract rate limit headers from response
+    ├── X-RateLimit-Limit
+    ├── X-RateLimit-Remaining
+    └── X-RateLimit-Reset
+    ↓
+Check response status
+    ├── 2xx: Parse JSON and return data with rate limit info
+    ├── 403: Throw GitHubRateLimitError with reset time
+    └── Other errors: Throw GitHubApiError with status and message
+    ↓
+Return GitHubResponse<T> with data and rateLimitInfo
+```
+
+### GitHub Error Flow
+
+```
+GitHub API error occurs
+    ↓
+GitHub Client catches error
+    ↓
+Check error type
+    ├── 403 status → GitHubRateLimitError
+    ├── 404 status → GitHubApiError; the service maps it to a repository- or file-specific error
+    ├── Other non-2xx → GitHubApiError
+    └── Network/timeout → GitHubApiError
+    ↓
+Error includes rate limit information if available
+    ↓
+Service layer handles error
+    ↓
+Return appropriate error response to client
+```
+
+### Repository Metadata Retrieval Flow
+
+```
+User/Caller requests repository metadata
+    ↓
+GitHubService.getRepositoryMetadata(owner, repo)
+    ↓
+GitHubClient.get('/repos/{owner}/{repo}')
+    ↓
+GitHub API returns repository data
+    ↓
+Map GitHubRepository to RepositoryMetadata
+    ├── owner.login → owner
+    ├── name → name
+    ├── full_name → fullName
+    ├── Construct URL → url
+    ├── description → description
+    ├── default_branch → defaultBranch
+    ├── stargazers_count → stars
+    ├── forks_count → forks
+    ├── language → primaryLanguage
+    ├── size → size
+    ├── created_at → createdAt (Date)
+    ├── updated_at → updatedAt (Date)
+    ├── pushed_at → pushedAt (Date)
+    ├── visibility → visibility
+    └── isArchived → false (not in basic response)
+    ↓
+Return RepositoryMetadata to caller
+    ↓
+Error handling:
+    ├── 404 → GitHubRepositoryNotFoundError
+    └── Other errors → GitHubApiError
+```
+
+### Repository Tree Retrieval Flow
+
+```
+User/Caller requests repository tree
+    ↓
+GitHubService.getRepositoryTree(owner, repo, sha?)
+    ↓
+Default to 'HEAD' if no sha provided
+    ↓
+GitHubClient.get('/repos/{owner}/{repo}/git/trees/{sha}?recursive=1')
+    ↓
+GitHub API returns tree data
+    ↓
+Check if tree is truncated
+    ├── Yes → Throw GitHubTreeTruncatedError
+    └── No → Continue
+    ↓
+Map GitHubTreeItem to TreeItem
+    ├── path → path
+    ├── type 'blob' → 'file'
+    ├── type 'tree' → 'directory'
+    ├── sha → sha
+    └── size → size (if available)
+    ↓
+Return TreeItem[] to caller
+    ↓
+Error handling:
+    ├── 404 → GitHubRepositoryNotFoundError
+    ├── Truncated → GitHubTreeTruncatedError
+    └── Other errors → GitHubApiError
+```
+
+### File Content Retrieval Flow
+
+```
+User/Caller requests file content
+    ↓
+GitHubService.getFileContent(owner, repo, path, ref?)
+    ↓
+GitHubClient.get('/repos/{owner}/{repo}/contents/{path}?ref={ref}')
+    ↓
+GitHub API returns file data
+    ↓
+Validate file type
+    ├── type !== 'file' → Throw GitHubBinaryFileError
+    └── type === 'file' → Continue
+    ↓
+Validate encoding
+    ├── encoding !== 'base64' → Throw GitHubBinaryFileError
+    └── encoding === 'base64' → Continue
+    ↓
+decodeBase64Content() in github.utils.ts decodes Base64 content to UTF-8
+    ↓
+Map GitHubFileContent to FileContent
+    ├── path → path
+    ├── decoded content → content
+    ├── sha → sha
+    ├── size → size
+    └── encoding → encoding
+    ↓
+Return FileContent to caller
+    ↓
+Error handling:
+    ├── 404 → GitHubFileNotFoundError
+    ├── Directory → GitHubBinaryFileError
+    ├── Unsupported encoding → GitHubBinaryFileError
+    └── Other errors → GitHubApiError
+```
+
+### Future Milestone 4 Handoff
+
+```
+GitHub Service (Milestone 3B)
+    ↓
+File Processing Service (Milestone 4)
+    ├── File filtering based on extensions
+    ├── Language detection
+    └── File size validation
+    ↓
+Chunking Service (Milestone 4)
+    ├── Text splitting
+    ├── Overlap management
+    └── Metadata preservation
+    ↓
+Embedding Service (Milestone 5)
+    ├── Vector generation
+    └── Model selection
+    ↓
+Qdrant Storage (Milestone 5)
+    ├── Vector insertion
+    └── Metadata indexing
 ```
 
 ### Database Error Flow

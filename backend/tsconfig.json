@@ -14,7 +14,8 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "moduleDetection": "force"
+    "moduleDetection": "force",
+    "types": ["@types/jest"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"],
