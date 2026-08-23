@@ -421,6 +421,350 @@ This file documents the rationale behind key technical decisions made during the
 - Provides confidence in implementation
 - Uses stable public repository (facebook/react) for reliability
 
+## File Processing Decisions
+
+### File Processing Module Separation
+**Decision:** Created dedicated file-processing module separate from GitHub integration
+**Rationale:**
+- File processing logic is independent of GitHub API communication
+- Easy to test file processing without GitHub dependencies
+- Can swap file processing implementation if needed
+- Clear separation of concerns follows single responsibility principle
+- Enables future reuse with other sources beyond GitHub
+- Prevents file processing logic from spreading through codebase
+
+### Structured Filtering Results
+**Decision:** Return structured FileFilterResult instead of throwing exceptions for normal filtering
+**Rationale:**
+- Filtering is expected behavior, not an error condition
+- Distinguishes between business logic (filtering) and failures (errors)
+- Enables batch processing without exception handling overhead
+- Clear status communication: PROCESSABLE, UNSUPPORTED, BINARY, TOO_LARGE
+- Allows calling code to make decisions based on filtering results
+- More efficient than try-catch for expected filtering scenarios
+
+### 1MB File Size Limit
+**Decision:** Set default max file size to 1MB (1048576 bytes)
+**Rationale:**
+- Appropriate for source code files (most source files are < 100KB)
+- Prevents processing of large binaries or generated files
+- Configurable via environment variable for different use cases
+- Conservative limit ensures performance for chunking stage
+- Large files can be excluded during tree traversal (size available in GitHub API)
+- Balance between inclusivity and performance
+
+### Extension-Based Language Detection
+**Decision:** Use deterministic file extension mapping for language detection
+**Rationale:**
+- Sufficient for source code repositories (extensions are reliable)
+- No ML model dependencies or computational overhead
+- Fast and predictable
+- Easy to extend with new languages
+- Special filename support for Dockerfile, Makefile, etc.
+- Industry standard approach for language detection
+- ML-based detection overkill for this use case
+
+### Configurable Filtering Rules
+**Decision:** Made filtering rules configurable via FileProcessingConfig
+**Rationale:**
+- Different projects may have different requirements
+- Can extend ignored directories/extensions without code changes
+- Allows per-project customization
+- Future-proof for enterprise use cases
+- Sensible defaults provided out of the box
+- Supports both default and custom configurations
+
+### Conservative Binary Detection
+**Decision:** Use simple heuristics for binary detection (null bytes, non-printable ratio)
+**Rationale:**
+- Sufficient for preventing binary data from entering text processing pipeline
+- Fast and lightweight
+- No external dependencies
+- Combines extension-based and content-based detection
+- False positives acceptable (conservative approach)
+- Advanced binary classification unnecessary for this milestone
+
+### Application-Level ProcessedFile Type
+**Decision:** Created ProcessedFile interface separate from GitHub types
+**Rationale:**
+- Decouples file processing from GitHub API structure
+- Provides clean, stable interface for chunking stage
+- Normalized metadata across different sources
+- Only includes relevant fields needed by application
+- Enables easy switching between file sources
+- Follows principle of isolation from external dependencies
+
+### Path Normalization
+**Decision:** Normalize all paths to use forward slashes consistently
+**Rationale:**
+- Cross-platform compatibility (Windows uses backslashes)
+- Consistent path handling in database and processing
+- Forward slashes are web standard
+- GitHub API uses forward slashes
+- Prevents platform-specific bugs
+- Simple and effective normalization
+
+### Binary Extension Blacklist
+**Decision:** Maintain explicit blacklist of binary extensions rather than whitelist
+**Rationale:**
+- New binary formats emerge regularly
+- Whitelist would require constant updates
+- Blacklist of common binaries covers most cases
+- Unknown extensions default to PROCESSABLE for safety
+- Content-based detection catches missed binaries
+- Conservative approach prioritizes not missing source code
+
+### Minified File Detection
+**Decision:** Detect and reject minified files using regex patterns
+**Rationale:**
+- Minified files have reduced semantic value for code understanding
+- Patterns like .min.js, .min.css are standard conventions
+- Prevents noise in chunking and embedding stages
+- Easy to extend with additional patterns
+- Build artifacts typically in ignored directories anyway
+- Improves quality of processed content
+
+### Special Filename Support
+**Decision:** Support special files without extensions (Dockerfile, Makefile, etc.)
+**Rationale:**
+- These files contain important configuration and build logic
+- Standard in many repositories
+- No extension but clearly identifiable by name
+- Valuable for code understanding and documentation
+- Language detection handles exact name matches
+- Industry-standard practice
+
+### Separate Utils Module
+**Decision:** Created file-processing.utils.ts for shared utility functions
+**Rationale:**
+- Reusable functions across services
+- Clear separation of concerns
+- Easy to test utilities independently
+- Prevents code duplication
+- Binary detection, path normalization used by multiple services
+- Follows single responsibility principle
+
+### No Database Operations in Milestone 4A
+**Decision:** Keep file processing completely independent of database
+**Rationale:**
+- File processing is a transformation layer, not persistence
+- Database operations belong to orchestration layer (future indexing pipeline)
+- Makes file processing reusable in different contexts
+- Easier to test without database dependencies
+- Clear separation: GitHub → File Processing → (Future) Database
+- Follows existing pattern from GitHub service
+
+### Integration with GitHub Module
+**Decision:** File processing consumes GitHub application-level types (TreeItem, FileContent)
+**Rationale:**
+- Clean boundary between modules
+- Reuses existing type definitions
+- No tight coupling to GitHub API responses
+- Can work with other file sources in future
+- Consistent with existing architecture
+- Single direction of dependency
+
+## Chunking Decisions
+
+### Strategy Pattern for Chunking
+**Decision:** Implemented strategy pattern with multiple chunking strategies
+**Rationale:**
+- Enables different chunking approaches for different file types
+- Easy to add new strategies without modifying service logic
+- Clean separation between strategy selection and implementation
+- Modular design allows AST-aware strategies later
+- Prevents hundreds of language-specific if/else branches
+- Follows open/closed principle
+
+### Layered Strategy Selection
+**Decision:** Strategy priority: Markdown → Code-aware → Line-based fallback
+**Rationale:**
+- Markdown has specific structure (headings, code blocks) that needs special handling
+- Code-aware for programming languages where structural detection is valuable
+- Line-based as universal fallback for unknown languages
+- Ensures every file can be chunked regardless of language
+- Progressive complexity: specific → general → fallback
+- Prevents processing failures for edge cases
+
+### Code-Aware Chunking Without Full AST Parsing
+**Decision:** Implemented practical code-aware chunking using regex and heuristics
+**Rationale:**
+- Full AST parsing for every language would add significant complexity
+- Tree-sitter or compiler dependencies would bloat the project
+- Regex-based detection is sufficient for common patterns (functions, classes, imports)
+- Good enough for MVP and production use
+- Can be enhanced with AST parsing later if needed
+- Maintains modular design for future upgrades
+
+### 100 Lines Default Chunk Size
+**Decision:** Set default max chunk size to 100 lines
+**Rationale:**
+- Balances context preservation with embedding efficiency
+- Most functions/classes fit within 100 lines
+- Small enough for effective semantic search
+- Large enough to maintain meaningful code context
+- Configurable via environment variable for different use cases
+- Industry standard for code chunking
+
+### 10 Lines Default Overlap
+**Decision:** Set default chunk overlap to 10 lines
+**Rationale:**
+- Provides context continuity between chunks
+- Helps prevent cutting important statements
+- Minimal overhead for embedding costs
+- Sufficient for most code boundaries
+- Configurable for different needs
+- Prevents loss of context at chunk boundaries
+
+### Deterministic Chunk IDs
+**Decision:** Generate chunk IDs based on file SHA, path, index, and configuration
+**Rationale:**
+- Same input always produces same chunk IDs
+- Enables caching and deduplication
+- No random UUIDs that change between runs
+- Simple hash function without external dependencies
+- Includes configuration in hash to detect config changes
+- Essential for reproducible processing
+
+### Simple Hash Function vs Crypto Library
+**Decision:** Implemented custom simple hash function instead of using Node.js crypto
+**Rationale:**
+- No external dependencies needed
+- Sufficient for deduplication and caching
+- Faster than SHA-256 for this use case
+- Consistent with project's minimal dependency philosophy
+- Deterministic and collision-resistant enough for chunk IDs
+- Easy to understand and maintain
+
+### Line-Aware Chunking
+**Decision:** Never split chunks in the middle of a line
+**Rationale:**
+- Code readability preserved in chunks
+- Prevents syntax errors in partial code snippets
+- Better for LLM understanding and generation
+- Line numbers remain meaningful
+- Standard practice for code chunking
+- Respects code structure
+
+### Metadata Preservation
+**Decision:** Preserve comprehensive metadata in each chunk
+**Rationale:**
+- Essential for future semantic search and source attribution
+- File path enables context from repository structure
+- Line numbers enable source code navigation
+- Language enables language-specific processing
+- File SHA enables version tracking
+- Chunk index/total enables chunk ordering
+- Chunk type enables filtering by semantic type
+
+### Chunk Type Classification
+**Decision:** Classify chunks by semantic type (CODE, FUNCTION, CLASS, IMPORT, etc.)
+**Rationale:**
+- Enables better semantic search (e.g., search only functions)
+- Provides context for embedding models
+- Useful for filtering and analysis
+- Different chunk types may need different processing
+- Reflects code structure in chunk organization
+- Future-proof for advanced retrieval strategies
+
+### Heuristic Boundary Classification
+**Decision:** Classify common method, interface, and type declarations separately while retaining regex-based detection.
+**Rationale:**
+- Preserves useful semantic metadata without introducing a language parser framework.
+- Allows method boundaries to split from surrounding class blocks where the syntax is recognizable.
+- Keeps interface and type declarations distinct for future retrieval filters.
+- Retains line-based fallback behavior for malformed or unsupported source.
+
+### Import Grouping
+**Decision:** Group consecutive import/include statements into single chunks
+**Rationale:**
+- Imports provide important context but don't need individual chunks
+- Reduces chunk count and embedding costs
+- Maintains dependency information
+- Common pattern across languages (JavaScript, Python, C++, etc.)
+- Prevents noise from many tiny import chunks
+- Improves chunk quality for semantic search
+
+### Oversized Structure Splitting
+**Decision:** Split functions/classes that exceed max chunk size using line-based fallback
+**Rationale:**
+- Prevents oversized chunks that hurt embedding quality
+- Maintains function integrity as much as possible
+- Fallback to line-based when structure can't be preserved
+- Ensures all code is chunked regardless of size
+- Better than discarding oversized structures
+- Safe and predictable behavior
+
+### Markdown Heading-Aware Chunking
+**Decision:** Keep headings with their associated content
+**Rationale:**
+- Headings provide semantic context for content
+- Prevents useless chunks containing only headings
+- Better for documentation understanding
+- Maintains document structure in chunks
+- Standard practice for document chunking
+- Improves retrieval quality for documentation
+
+### No Empty Chunks
+**Decision:** Validate and skip chunks that are empty or whitespace-only
+**Rationale:**
+- Prevents wasted embedding computation
+- Improves chunk quality for search
+- Reduces noise in vector database
+- Handles edge cases gracefully
+- Better user experience for search results
+- Prevents processing errors downstream
+
+### Configuration Validation
+**Decision:** Validate chunking configuration at service initialization
+**Rationale:**
+- Fail fast for invalid configuration
+- Prevents runtime errors during chunking
+- Clear error messages for developers
+- Ensures maxChunkLines > 0 and overlap < max
+- Consistent with existing configuration validation pattern
+- Better than discovering issues during processing
+
+### Batch Processing with Error Handling
+**Decision:** Implement batch file processing that continues on individual failures
+**Rationale:**
+- One bad file shouldn't stop entire repository processing
+- Graceful degradation for problematic files
+- Enables partial indexing of repositories
+- Better user experience for large repositories
+- Consistent with file processing layer design
+- Logs warnings for debugging without stopping execution
+
+### Size Safety Limits
+**Decision:** Add safety limits for file content size (50MB) and chunk content (10MB)
+**Rationale:**
+- Prevents memory exhaustion from pathological inputs
+- Protects against denial-of-service attacks
+- Ensures reasonable processing times
+- Files already filtered by file processing layer
+- Defense in depth approach
+- Better than unbounded resource consumption
+
+### Chunking Service Independence
+**Decision:** Keep chunking service independent of external systems
+**Rationale:**
+- No GitHub API calls (consumes ProcessedFile)
+- No database operations (produces in-memory CodeChunk)
+- No vector database (Qdrant for future milestone)
+- No AI provider (Ollama for future milestone)
+- No caching (Redis for future milestone)
+- Clean separation of concerns enables testing and reuse
+
+### Integration with File Processing
+**Decision:** Chunking consumes ProcessedFile objects from Milestone 4A
+**Rationale:**
+- Clean boundary between processing stages
+- Reuses existing normalized file data
+- No tight coupling to GitHub integration
+- Can work with other file sources in future
+- Consistent with layered architecture
+- Single direction of dependency
+
 ## Security Decisions
 
 ### Helmet Middleware

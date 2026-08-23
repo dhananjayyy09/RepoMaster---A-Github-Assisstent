@@ -36,6 +36,13 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32).optional(),
   RATE_LIMIT_WINDOW_MS: z.string().default('900000'),
   RATE_LIMIT_MAX_REQUESTS: z.string().default('100'),
+  
+  // File Processing
+  MAX_FILE_SIZE_BYTES: z.string().default('1048576'), // 1MB default
+  
+  // Chunking
+  MAX_CHUNK_LINES: z.string().default('100'), // 100 lines per chunk
+  CHUNK_OVERLAP_LINES: z.string().default('10'), // 10 lines overlap
 });
 
 const env = envSchema.parse(process.env);
@@ -85,6 +92,15 @@ export const config = {
     jwtSecret: env.JWT_SECRET,
     rateLimitWindowMs: parseInt(env.RATE_LIMIT_WINDOW_MS, 10),
     rateLimitMaxRequests: parseInt(env.RATE_LIMIT_MAX_REQUESTS, 10),
+  },
+  
+  fileProcessing: {
+    maxFileSizeBytes: parseInt(env.MAX_FILE_SIZE_BYTES, 10),
+  },
+  
+  chunking: {
+    maxChunkLines: parseInt(env.MAX_CHUNK_LINES, 10),
+    chunkOverlapLines: parseInt(env.CHUNK_OVERLAP_LINES, 10),
   },
 };
 

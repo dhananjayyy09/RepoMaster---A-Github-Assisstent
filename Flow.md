@@ -2,7 +2,7 @@
 
 This file documents the flow and interactions between different parts of the GitHub Knowledge Assistant codebase.
 
-## Current System Flow (Milestones 1–3B)
+## Current System Flow (Milestones 1–4B)
 
 ### Frontend Application Flow
 
@@ -328,26 +328,259 @@ Error handling:
     └── Other errors → GitHubApiError
 ```
 
-### Future Milestone 4 Handoff
+### File Processing Flow (Milestone 4A)
 
 ```
-GitHub Service (Milestone 3B)
+GitHub TreeItem (from Milestone 3B)
     ↓
-File Processing Service (Milestone 4)
-    ├── File filtering based on extensions
-    ├── Language detection
-    └── File size validation
+File Filter Service
+    ├── Check if directory → UNSUPPORTED
+    ├── Check ignored directories (.git, node_modules, etc.) → UNSUPPORTED
+    ├── Check file size vs MAX_FILE_SIZE_BYTES → TOO_LARGE if exceeded
+    ├── Check ignored extensions (.png, .exe, etc.) → BINARY
+    ├── Check minified patterns (.min.js, etc.) → UNSUPPORTED
+    └── Return FileFilterResult with status
     ↓
-Chunking Service (Milestone 4)
+If status is PROCESSABLE:
+    ↓
+Language Detector Service
+    ├── Extract filename from path
+    ├── Check special filenames (Dockerfile, Makefile, etc.)
+    ├── Extract extension
+    ├── Map to ProgrammingLanguage via extension lookup
+    └── Return language (or 'Unknown')
+    ↓
+Binary Detection (via utils)
+    ├── Check for null bytes in content
+    ├── Check ratio of non-printable characters
+    └── Return true if binary detected
+    ↓
+File Normalizer Service
+    ├── Apply file filter
+    ├── Detect language
+    ├── Detect binary content
+    ├── Normalize path (forward slashes)
+    ├── Extract filename and extension
+    ├── Create ProcessedFile with metadata
+    └── Return ProcessedFile or throw error (BinaryFileError, FileTooLargeError)
+    ↓
+ProcessedFile
+    ├── path (normalized)
+    ├── fileName
+    ├── extension
+    ├── language
+    ├── content
+    ├── size
+    ├── sha
+    └── isProcessable
+    ↓
+ Milestone 4B: Chunking
+```
+
+### File Filter Decision Flow
+
+```
+TreeItem input
+    ↓
+Is it a directory?
+    ├── Yes → UNSUPPORTED (skip)
+    └── No → Continue
+    ↓
+Is it in ignored directory?
+    ├── Yes → UNSUPPORTED (skip)
+    └── No → Continue
+    ↓
+Does size exceed MAX_FILE_SIZE_BYTES?
+    ├── Yes → TOO_LARGE (skip)
+    └── No → Continue
+    ↓
+Is extension in ignored list?
+    ├── Yes → BINARY (skip)
+    └── No → Continue
+    ↓
+Is filename minified pattern?
+    ├── Yes → UNSUPPORTED (skip)
+    └── No → PROCESSABLE (accept)
+```
+
+### Language Detection Flow
+
+```
+Filename input
+    ↓
+Normalize to lowercase
+    ↓
+Exact match in special filenames?
+    ├── Yes (Dockerfile, Makefile, etc.) → Return specific language
+    └── No → Continue
+    ↓
+Extract extension
+    ↓
+Extension in language map?
+    ├── Yes → Return mapped language
+    └── No → Return 'Unknown'
+```
+
+### Binary Detection Flow
+
+```
+Content string input
+    ↓
+Contains null bytes (\0)?
+    ├── Yes → Binary detected
+    └── No → Continue
+    ↓
+Calculate non-printable character ratio
+    ↓
+Ratio > 30%?
+    ├── Yes → Binary detected
+    └── No → Text content
+```
+
+### File Normalization Flow
+
+```
+TreeItem + FileContent input
+    ↓
+Apply File Filter
+    ├── UNSUPPORTED → Skip file
+    ├── TOO_LARGE → Throw FileTooLargeError
+    ├── BINARY → Throw BinaryFileError
+    └── PROCESSABLE → Continue
+    ↓
+Detect Language
+    ↓
+Detect Binary Content
+    ├── Binary detected → Throw BinaryFileError
+    └── Text content → Continue
+    ↓
+Normalize Path (forward slashes)
+    ↓
+Extract Filename
+    ↓
+Extract Extension
+    ↓
+Create ProcessedFile
+    ├── path: normalized path
+    ├── fileName: extracted filename
+    ├── extension: extracted extension
+    ├── language: detected language
+    ├── content: file content
+    ├── size: file size
+    ├── sha: file SHA
+    └── isProcessable: true
+    ↓
+Return ProcessedFile
+```
+
+### Batch File Processing Flow
+
+```
+Array of TreeItems + Array of FileContents
+    ↓
+Create map of FileContents by path
+    ↓
+Iterate through TreeItems
+    ↓
+Skip directories
+    ↓
+Find matching FileContent by path
+    ├── Not found → Skip
+    └── Found → Continue
+    ↓
+Normalize file
+    ├── Success → Add to results
+    └── Error (binary, too large) → Skip
+    ↓
+Return array of ProcessedFiles
+```
+
+### Chunking Flow (Milestone 4B)
+
+```
+ProcessedFile (from Milestone 4A)
+    ↓
+ChunkingService.chunkFile()
+    ↓
+Input Validation
+    ├── Check required fields (path, content, sha)
+    ├── Check content not empty
+    ├── Check content size < 50MB
+    └─ Invalid → Throw InvalidChunkInputError
+    ↓
+Configuration Validation
+    ├── Check maxChunkLines > 0
+    ├── Check chunkOverlapLines >= 0
+    ├── Check chunkOverlapLines < maxChunkLines
+    └─ Invalid → Throw ChunkingConfigurationError
+    ↓
+Strategy Selection
+    ├── Is language Markdown? → MarkdownChunkingStrategy
+    ├── Is language code? → CodeAwareChunkingStrategy
+    └─ Default → LineBasedChunkingStrategy
+    ↓
+Strategy.chunk()
+    ↓
+MarkdownChunkingStrategy
+    ├── Detect headings (#, ##, ###)
+    ├── Detect code blocks (```)
+    ├── Create blocks by heading/code boundaries
+    ├── Split oversized blocks with line ranges
+    └─ Return CodeChunk[]
+    ↓
+CodeAwareChunkingStrategy
+    ├── Detect import/include blocks
+    ├── Detect function boundaries
+    ├── Detect class/interface boundaries
+    ├── Detect method boundaries
+    ├── Create blocks by structural boundaries
+    ├── Split oversized blocks with line ranges
+    └─ Return CodeChunk[]
+    ↓
+LineBasedChunkingStrategy
+    ├── Split content into lines
+    ├── Create overlapping line ranges
+    ├── Extract lines for each range
+    └─ Return CodeChunk[]
+    ↓
+Chunk Validation
+    ├── Check chunk structure (id, content, path, sha)
+    ├── Check content not empty
+    ├── Check line numbers valid
+    ├── Check chunk index valid
+    └─ Skip invalid chunks
+    ↓
+Metadata Creation
+    ├── Generate deterministic chunk ID
+    ├── Set filePath, fileName, language
+    ├── Set startLine, endLine (1-based)
+    ├── Set chunkIndex, totalChunks
+    ├── Set fileSha
+    ├── Calculate chunk size
+    └─ Set chunkType
+    ↓
+Return CodeChunk[]
+```
+
+### Future Milestone 5 Handoff
+
+```
+File Processing Service (Milestone 4A - COMPLETED)
+    ↓
+ProcessedFile
+    ↓
+Chunking Service (Milestone 4B - COMPLETED)
     ├── Text splitting
     ├── Overlap management
     └── Metadata preservation
     ↓
-Embedding Service (Milestone 5)
+CodeChunk[]
+    ↓
+Embedding Service (Milestone 5 - PENDING)
     ├── Vector generation
     └── Model selection
     ↓
-Qdrant Storage (Milestone 5)
+Qdrant Storage (Milestone 5 - PENDING)
     ├── Vector insertion
     └── Metadata indexing
 ```
@@ -403,7 +636,7 @@ Return repository ID with INDEXING status
     ↓
 Background Job triggered
     ↓
-[Asynchronous Indexing Process]
+[Asynchronous Indexing Process - see Repository Indexing Flow]
 ```
 
 ### Repository Indexing Flow (Milestone 6+)
@@ -413,17 +646,19 @@ Background Job Starts
     ↓
 GitHub Service fetches file tree
     ↓
-File Filter Service filters relevant files
+File Processing Service (Milestone 4A)
+    ├── File filtering
+    ├── Language detection
+    ├── Binary detection
+    └── File normalization
     ↓
 GitHub Service downloads file contents
     ↓
-File Parser Service parses code
+Chunking Service (Milestone 4B - COMPLETED) splits into chunks
     ↓
-Chunking Service splits into chunks
+Embedding Service (Milestone 5 - PENDING) generates vectors
     ↓
-Embedding Service generates vectors
-    ↓
-Vector Service stores in Qdrant
+Vector Service (Milestone 5 - PENDING) stores in Qdrant
     ↓
 PostgreSQL stores metadata
     ↓
@@ -852,3 +1087,25 @@ Step 3
 **Performance Considerations:**
 - Caching strategy
 - Optimization points
+
+## Current Architecture (Milestone 4B Complete)
+
+```
+ProcessedFile
+    ↓
+ChunkingService
+    ↓
+Strategy Selection
+    ↓
+Code / Markdown / Fallback Strategy
+    ↓
+Chunk Validation
+    ↓
+Metadata Creation
+    ↓
+Deterministic ID
+    ↓
+CodeChunk[]
+    ↓
+Milestone 5 (PENDING)
+```

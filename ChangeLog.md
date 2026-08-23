@@ -2,6 +2,203 @@
 
 This file tracks all changes made to the GitHub Knowledge Assistant project by the AI assistant.
 
+## [2026-08-23] Milestone 4B: Code Chunking & Metadata
+
+### Chunking Module Structure
+- **File:** `backend/src/chunking/`
+  - Created dedicated chunking module with strategies, service, types, errors, utils, and index
+  - Isolated chunking logic from file processing and future embedding
+  - Clean separation of concerns for strategy selection, chunk generation, and metadata
+
+### Chunking Types
+- **File:** `backend/src/chunking/chunking.types.ts`
+  - Added `ChunkType` type: CODE, FUNCTION, CLASS, METHOD, IMPORT, INTERFACE, TYPE, DOCUMENTATION, CONFIGURATION, FALLBACK
+  - Added `CodeChunk` interface with fields: id, content, filePath, fileName, language, startLine, endLine, chunkIndex, totalChunks, fileSha, size, chunkType
+  - Added `ChunkingConfig` interface: maxChunkLines, chunkOverlapLines
+  - Added `ChunkingStrategy` interface for strategy pattern
+  - Added `LineRange` and `CodeBlock` helper interfaces
+
+### Chunking Errors
+- **File:** `backend/src/chunking/chunking.errors.ts`
+  - Added `ChunkingError` base class extending AppError
+  - Added `InvalidChunkInputError` for invalid file inputs
+  - Added `ChunkingConfigurationError` for configuration validation failures
+  - Fixed prototype chain for proper instanceof checks
+
+### Chunking Configuration
+- **File:** `backend/src/config/index.ts`
+  - Added `MAX_CHUNK_LINES` environment variable with default 100
+  - Added `CHUNK_OVERLAP_LINES` environment variable with default 10
+  - Integrated chunking configuration into existing validation system
+  - Added `chunking.maxChunkLines` and `chunking.chunkOverlapLines` to config object 
+
+### Chunking Utilities
+- **File:** `backend/src/chunking/chunking.utils.ts`
+  - Added `splitContentIntoLines()` for line splitting
+  - Added `createLineRanges()` for creating overlapping line ranges
+  - Added `extractLinesFromRange()` for extracting specific line ranges
+  - Added `joinLines()` for joining lines back into content
+  - Added `generateDeterministicChunkId()` for deterministic ID generation (no external dependencies)
+  - Added `trimWhitespace()` for whitespace trimming
+  - Added `validateChunkContent()` for content validation
+  - Added `calculateChunkSize()` for UTF-8 aware size calculation
+  - Added helper functions for indentation detection and content preservation
+
+### Chunking Strategies
+- **File:** `backend/src/chunking/chunking.strategies.ts`
+  - Implemented `LineBasedChunkingStrategy` as fallback for all languages
+  - Implemented `CodeAwareChunkingStrategy` for 16+ programming languages
+  - Implemented `MarkdownChunkingStrategy` for Markdown files
+  - Code-aware detection: imports, functions, classes, methods, interfaces, types
+  - Markdown detection: headings, code blocks, sections
+  - Automatic fallback to line-based when structural parsing unavailable
+  - Configurable chunk size and overlap
+  - Oversized structure splitting with line-aware fallback
+
+### Chunking Service
+- **File:** `backend/src/chunking/chunking.service.ts`
+  - Implemented `ChunkingService` as central orchestration layer
+  - Strategy selection based on file language
+  - Input validation (file content, size, required fields)
+  - Configuration validation (positive maxChunkLines, valid overlap)
+  - Chunk validation (content, line numbers, indices)
+  - Batch file processing with error handling
+  - Deterministic chunk ID generation
+  - Metadata preservation (path, filename, language, SHA, line numbers)
+
+### Testing
+- **File:** `backend/src/test/chunking.test.ts`
+  - Added 50+ comprehensive unit tests for chunking
+  - Added focused routing and metadata coverage for C++, Go, Rust, JSON, YAML, Dockerfile, and Makefile.
+  - Utility tests: line splitting, range creation, ID generation, content validation
+  - Strategy tests: line-based, code-aware, markdown
+  - Service tests: chunking, validation, configuration, strategy selection
+  - Metadata tests: path preservation, line numbers, chunk indices, SHA preservation
+  - Edge case tests: long lines, whitespace, malformed code, mixed line endings
+  - Determinism tests: same input produces same IDs
+  - All tests use deterministic inputs, no external dependencies
+
+### Module Index
+- **File:** `backend/src/chunking/index.ts`
+  - Created barrel export for clean module imports
+  - Exports all types, errors, utilities, strategies, and service
+
+### Architecture Decisions
+- Layered strategy pattern: Markdown → Code-aware → Line-based fallback
+- Code-aware chunking without full AST parsing (practical MVP approach)
+- Grouped consecutive import/include statements into a single context chunk.
+- Corrected heuristic classification and boundaries for methods, interfaces, and type declarations.
+- Deterministic chunk IDs based on file SHA, path, index, and configuration
+- Line-aware chunking (never split mid-line)
+- Configurable chunk size (100 lines default) and overlap (10 lines default)
+- Metadata preservation for future semantic search
+- Safe fallback for unknown languages and oversized structures
+- No external dependencies for ID generation (simple hash function)
+
+### Integration Boundaries
+- Chunking consumes ProcessedFile objects from Milestone 4A
+- Produces CodeChunk[] for future embedding stage (Milestone 5)
+- Independent of GitHub API, Prisma, Qdrant, Ollama, Redis
+- Clean separation from file processing and future embedding
+
+## [2026-08-23] Milestone 4A: File Processing Foundation
+
+### File Processing Module Structure
+- **File:** `backend/src/file-processing/`
+  - Created dedicated file-processing module with services, types, errors, utils, and index
+  - Isolated file processing logic from GitHub integration and future chunking
+  - Clean separation of concerns for filtering, language detection, and normalization
+
+### File Processing Types
+- **File:** `backend/src/file-processing/file-processing.types.ts`
+  - Added `FileProcessStatus` type: PROCESSABLE, UNSUPPORTED, BINARY, TOO_LARGE
+  - Added `ProgrammingLanguage` type with 25+ supported languages
+  - Added `FileFilterResult` interface for structured filtering decisions
+  - Added `ProcessedFile` interface for normalized file data
+  - Added `FileProcessingConfig` interface for configurable filtering rules
+  - Added `FileProcessingInput` interface for GitHub data consumption
+
+### File Processing Errors
+- **File:** `backend/src/file-processing/file-processing.errors.ts`
+  - Added `FileProcessingError` base class extending AppError
+  - Added `UnsupportedFileError` for unsupported file types
+  - Added `BinaryFileError` for binary file detection
+  - Added `FileTooLargeError` for size limit violations
+  - Fixed prototype chain for proper instanceof checks
+
+### File Filter Service
+- **File:** `backend/src/file-processing/file-filter.service.ts`
+  - Implemented `FileFilterService` with configurable filtering rules
+  - Default max file size: 1MB (1048576 bytes)
+  - Ignores 12 directory patterns: .git, node_modules, vendor, dist, build, out, target, coverage, .next, .nuxt, .cache, __pycache__
+  - Ignores 40+ binary extensions: images, videos, audio, archives, executables, fonts, documents
+  - Detects minified files: .min.js, .min.css, .bundle.js, .chunk.js
+  - Returns structured `FileFilterResult` instead of throwing exceptions for normal filtering
+  - Configurable via constructor or updateConfig method
+
+### Language Detection Service
+- **File:** `backend/src/file-processing/language-detector.service.ts`
+  - Implemented `LanguageDetectorService` for deterministic language detection
+  - Supports 25+ programming languages and file types
+  - Extension-based detection with special filename support
+  - Special files: Dockerfile, Makefile, Jenkinsfile, Procfile, package.json, requirements.txt, etc.
+  - Case-insensitive filename matching
+  - Returns 'Unknown' for unrecognized extensions
+
+### File Processing Utilities
+- **File:** `backend/src/file-processing/file-processing.utils.ts`
+  - Added `detectBinaryContent()` for binary content detection
+  - Added `normalizePath()` for consistent forward-slash paths
+  - Added `extractFileName()` for filename extraction
+  - Added `extractExtension()` for extension extraction
+  - Added `isTextFile()` helper for text/binary classification
+  - Binary detection: null bytes, high ratio of non-printable characters
+
+### File Normalizer Service
+- **File:** `backend/src/file-processing/file-normalizer.service.ts`
+  - Implemented `FileNormalizerService` for end-to-end file processing
+  - Combines filtering, language detection, and normalization
+  - Accepts GitHub TreeItem and FileContent as input
+  - Returns normalized `ProcessedFile` with consistent metadata
+  - Throws exceptions for actual errors (binary, too large)
+  - Silently skips unsupported files in batch processing
+  - Path normalization for cross-platform consistency
+
+### Environment Configuration
+- **File:** `backend/src/config/index.ts`
+  - Added `MAX_FILE_SIZE_BYTES` environment variable with default 1048576 (1MB)
+  - Integrated file processing configuration into existing validation system
+  - Added `fileProcessing.maxFileSizeBytes` to config object
+
+### Testing
+- **File:** `backend/src/test/file-processing.test.ts`
+  - Added 80+ comprehensive unit tests for file processing
+  - File filter tests: source files, directories, ignored patterns, binary detection, size limits
+  - Language detection tests: 25+ languages, special files, case sensitivity, unknown extensions
+  - Utility tests: binary detection, path normalization, filename/extension extraction
+  - Normalizer tests: valid files, error cases, batch processing, path handling
+  - All tests use deterministic inputs, no external API calls
+
+### Module Index
+- **File:** `backend/src/file-processing/index.ts`
+  - Created barrel export for clean module imports
+  - Exports all types, errors, services, and utilities
+
+### Architecture Decisions
+- Structured filtering decisions return results instead of exceptions
+- File processing independent of GitHub API communication
+- File processing independent of database operations
+- Configurable filtering rules for future extensibility
+- Conservative 1MB file size limit for source code processing
+- Deterministic language detection vs ML-based approaches
+- Binary detection via content heuristics, not just extensions
+
+### Integration Boundaries
+- File processing consumes GitHub application-level types (TreeItem, FileContent)
+- Produces clean ProcessedFile for future chunking stage
+- No database operations in this milestone
+- No GitHub API calls in this milestone
+
 ## [2026-08-22] Milestone 3B: GitHub Repository Retrieval (with Improvements)
 
 ### Code Quality Improvements
@@ -19,6 +216,8 @@ This file tracks all changes made to the GitHub Knowledge Assistant project by t
   - Updated tests to use helper function
 - **File:** `backend/src/test/manual-verification.ts`
   - Added test for Base64 decoding helper
+
+### Repository Metadata Retrieval
 
 ### Repository Metadata Retrieval
 - **File:** `backend/src/github/github.service.ts`
@@ -74,13 +273,12 @@ This file tracks all changes made to the GitHub Knowledge Assistant project by t
 
 ### Testing
 - **File:** `backend/src/test/github.test.ts`
-  - Added 20 comprehensive tests for GitHub service methods and helpers
+  - Added 20 comprehensive tests for GitHub service methods
   - Repository metadata tests: successful retrieval, missing fields, 404, API failures
   - Repository tree tests: successful retrieval, default branch, explicit branch, truncated tree, errors
   - File content tests: successful retrieval, explicit ref, directory handling, encoding validation, errors
-  - Helper function tests: Base64 decoding with UTF-8, multiline content, special characters
   - All tests use mocked responses, no live GitHub API calls
-  - Total: 60 tests passing (40 from Milestone 3A + 20 new)
+  - Total: 60 tests passing (40 from Milestone 3A + 17 new)
 
 ### Manual Verification
 - **File:** `backend/src/test/manual-verification.ts`
