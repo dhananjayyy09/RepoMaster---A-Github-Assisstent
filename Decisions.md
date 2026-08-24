@@ -765,6 +765,195 @@ This file documents the rationale behind key technical decisions made during the
 - Consistent with layered architecture
 - Single direction of dependency
 
+## Embedding Decisions
+
+### Provider Abstraction Pattern
+**Decision:** Implemented EmbeddingProvider interface for embedding generation
+**Rationale:**
+- Enables easy switching between Ollama, OpenAI, Anthropic, and other providers
+- No tight coupling to specific embedding API
+- Service layer depends on abstraction, not concrete implementation
+- Allows A/B testing of different embedding models
+- Future-proof for production (switch to cloud providers)
+- Reduces vendor lock-in
+- Follows dependency inversion principle
+
+### Ollama as Initial Provider
+**Decision:** Selected Ollama as the initial embedding provider
+**Rationale:**
+- Local execution - no API costs during development
+- Privacy - data stays on local machine
+- No API rate limits for development
+- Good embedding models available (nomic-embed-text)
+- Easy to install and run via Docker or native
+- Sufficient for development and testing
+- Can switch to cloud providers for production via abstraction layer
+
+### Embedding Module Separation
+**Decision:** Created dedicated embedding module separate from chunking and AI services
+**Rationale:**
+- Embedding logic is independent of chunking and future vector storage
+- Easy to test embedding without dependencies on other modules
+- Can swap embedding implementation if needed
+- Clear separation of concerns follows single responsibility principle
+- Enables future reuse with different data sources
+- Prevents embedding logic from spreading through codebase
+
+### Deterministic Dimension Detection
+**Decision:** Detect embedding dimensions from actual model output instead of hardcoding
+**Rationale:**
+- Different embedding models produce different dimensions (768, 1024, 1536, etc.)
+- Avoids assumptions about model capabilities
+- Enables easy model switching without code changes
+- Critical for Qdrant collection configuration in Milestone 5B
+- Fails fast if model returns inconsistent dimensions
+- More robust than static configuration
+
+### Application-Level Embedding Types
+**Decision:** Created EmbeddingResult interface separate from Ollama response types
+**Rationale:**
+- Decouples embedding service from Ollama-specific API structure
+- Provides clean, stable interface for vector storage stage
+- Normalized metadata across different providers
+- Only includes relevant fields needed by application
+- Enables easy switching between embedding providers
+- Follows principle of isolation from external dependencies
+
+### Batch Processing Strategy
+**Decision:** Implemented configurable batch size with native API and sequential fallback
+**Rationale:**
+- Batch processing more efficient than individual requests
+- Configurable batch size (default 10) for different use cases
+- Native batch API for newer Ollama versions
+- Sequential fallback ensures compatibility with older Ollama versions
+- Large batches automatically split into chunks
+- Prevents overwhelming the provider with huge requests
+- Balances efficiency with reliability
+
+### Timeout Configuration
+**Decision:** Implemented configurable timeout with 30-second default
+**Rationale:**
+- Embedding generation can take time for long texts
+- Prevents requests from hanging indefinitely
+- Configurable for different models and hardware
+- 30 seconds reasonable for local Ollama on typical hardware
+- Uses AbortController for proper timeout handling
+- Better than leaving requests hanging forever
+- Follows existing timeout pattern from GitHub client
+
+### Input Validation Strategy
+**Decision:** Validate inputs before sending to provider (empty, whitespace, length)
+**Rationale:**
+- Fail fast for invalid inputs
+- Prevents wasted API calls for empty/whitespace text
+- Clear error messages for developers
+- Maximum length limit prevents DoS (100k characters)
+- Input validation at service layer, not provider layer
+- Consistent with existing validation patterns
+- Better than discovering issues during provider call
+
+### Vector Validation
+**Decision:** Validate provider responses (array, non-empty, finite values)
+**Rationale:**
+- Prevents invalid data from propagating to vector storage
+- Catches provider errors early
+- Ensures all values are finite numbers (no Infinity, NaN)
+- Critical for Qdrant operations (rejects invalid vectors)
+- Defense in depth approach
+- Clear error messages for debugging
+- Prevents downstream failures in vector database
+
+### Dimension Consistency Validation
+**Decision:** Validate that all embeddings in a batch have consistent dimensions
+**Rationale:**
+- Qdrant requires consistent dimensions within a collection
+- Prevents mixing vectors from different models
+- Critical for vector database operations
+- Fails fast with clear error message
+- Enables detection of model changes or provider issues
+- Essential for data integrity in vector storage
+
+### Native Batch API with Fallback
+**Decision:** Try native batch API first, fall back to sequential calls
+**Rationale:**
+- Newer Ollama versions support batch embedding in single request
+- More efficient than sequential calls when available
+- Sequential fallback ensures compatibility with older versions
+- Automatic fallback without user intervention
+- Maximizes performance while maintaining compatibility
+- No version detection required (try/catch approach)
+
+### Ollama Embed Response Shape
+**Decision:** Use the current Ollama `/api/embed` contract with `input` requests and an `embeddings` array response.
+**Rationale:**
+- Matches the installed Ollama API and supports both single and batch embedding.
+- Keeps response parsing inside the Ollama provider boundary.
+- Preserves input ordering for batch results.
+- Treats malformed JSON and invalid vector data as application-level invalid-response errors.
+
+### Error Hierarchy
+**Decision:** Created specific error types for different failure modes
+**Rationale:**
+- Distinguishes between input errors, provider errors, timeout errors
+- Enables specific error handling at higher layers
+- Clear error messages for different failure scenarios
+- Consistent with existing error architecture
+- Helps with debugging and monitoring
+- Better than generic errors for all cases
+
+### No Live Ollama in Tests
+**Decision:** Mock fetch responses instead of calling live Ollama in tests
+**Rationale:**
+- Tests run without external dependencies
+- No requirement for Ollama to be running during CI/CD
+- Faster test execution
+- Can test error scenarios easily
+- Consistent test results regardless of Ollama status
+- Standard practice for external API testing
+- Prevents flaky tests due to network issues
+
+### Manual Verification Separate from Tests
+**Decision:** Create separate manual verification script for live Ollama testing
+**Rationale:**
+- Validates integration with actual Ollama instance
+- Tests against real embedding model
+- Confirms timeout and error handling work correctly
+- Separate from automated test suite to avoid dependencies
+- Provides confidence in implementation
+- Can be run on-demand when Ollama is available
+- Uses default model (nomic-embed-text) for reliability
+
+### 30-Second Timeout Default
+**Decision:** Set default timeout to 30 seconds for Ollama requests
+**Rationale:**
+- Sufficient for local embedding generation on typical hardware
+- Not too short to timeout on legitimate long requests
+- Not too long to hang indefinitely on failures
+- Configurable for different hardware and models
+- Matches typical timeout patterns in HTTP clients
+- Reasonable balance between responsiveness and patience
+
+### 10-Text Batch Size Default
+**Decision:** Set default batch size to 10 texts per batch
+**Rationale:**
+- Balances efficiency with memory usage
+- Small enough to avoid overwhelming Ollama
+- Large enough to benefit from batch processing
+- Configurable for different use cases
+- Common batch size for embedding APIs
+- Prevents excessive memory consumption for large batches
+
+### Model Installation Manual
+**Decision:** Do not automatically download or install embedding models
+**Rationale:**
+- Avoids unexpected network usage
+- Prevents automatic model changes
+- Gives users control over which models are installed
+- Clear error message when model is unavailable
+- Respects user's local environment and preferences
+- Standard practice for local ML tools
+- Avoids security concerns with automatic downloads
+
 ## Security Decisions
 
 ### Helmet Middleware

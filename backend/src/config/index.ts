@@ -43,6 +43,10 @@ const envSchema = z.object({
   // Chunking
   MAX_CHUNK_LINES: z.string().default('100'), // 100 lines per chunk
   CHUNK_OVERLAP_LINES: z.string().default('10'), // 10 lines overlap
+  
+  // Embedding
+  OLLAMA_TIMEOUT_MS: z.string().default('30000'), // 30 seconds default
+  EMBEDDING_BATCH_SIZE: z.string().default('10'), // 10 texts per batch
 });
 
 const env = envSchema.parse(process.env);
@@ -75,6 +79,7 @@ export const config = {
       baseUrl: env.OLLAMA_BASE_URL,
       embeddingModel: env.OLLAMA_EMBEDDING_MODEL,
       llmModel: env.OLLAMA_LLM_MODEL,
+      timeoutMs: parseInt(env.OLLAMA_TIMEOUT_MS, 10),
     },
     openai: {
       apiKey: env.OPENAI_API_KEY,
@@ -101,6 +106,10 @@ export const config = {
   chunking: {
     maxChunkLines: parseInt(env.MAX_CHUNK_LINES, 10),
     chunkOverlapLines: parseInt(env.CHUNK_OVERLAP_LINES, 10),
+  },
+  
+  embedding: {
+    batchSize: parseInt(env.EMBEDDING_BATCH_SIZE, 10),
   },
 };
 

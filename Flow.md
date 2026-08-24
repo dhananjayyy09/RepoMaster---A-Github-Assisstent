@@ -495,6 +495,132 @@ Normalize file
 Return array of ProcessedFiles
 ```
 
+### Embedding Flow (Milestone 5A)
+
+```
+CodeChunk (from Milestone 4B)
+    ↓
+EmbeddingService.embedText() or embedBatch()
+    ↓
+Input Validation
+    ├── Check text not empty
+    ├── Check text not whitespace-only
+    ├── Check text length < 100k characters
+    └─ Invalid → Throw EmbeddingInputError
+    ↓
+Batch Size Check
+    ├── Small batch (≤ batchSize) → Send directly to provider
+    └─ Large batch → Split into chunks
+    ↓
+EmbeddingProvider.embedBatch()
+    ↓
+OllamaEmbeddingProvider
+    ├── Try native batch API (/api/embed with input array)
+    ├── If batch API fails → Sequential fallback
+    └─ Individual embedText() calls
+    ↓
+Ollama HTTP Request
+    ├── POST to {baseUrl}/api/embed
+    ├── Request body: { model, input }
+    ├── Timeout handling with AbortController
+    └─ Response: { embeddings: number[][] }
+    ↓
+Response Validation
+    ├── Check embeddings field exists
+    ├── Check embeddings is an array
+    ├── Check each vector is not empty
+    ├── Check all values are finite numbers
+    └─ Invalid → Throw EmbeddingInvalidResponseError
+    ↓
+Create EmbeddingResult
+    ├── vector: number[]
+    ├── dimensions: vector.length
+    ├── model: configured model name
+    └─ inputLength: text.length
+    ↓
+Dimension Consistency Check (batch only)
+    ├── Check all embeddings have same dimensions
+    └─ Mismatch → Throw EmbeddingDimensionMismatchError
+    ↓
+Return EmbeddingResult[]
+```
+
+### Single Text Embedding Flow
+
+```
+Text input
+    ↓
+EmbeddingService.embedText()
+    ↓
+Validate input (not empty, not whitespace, length OK)
+    ↓
+Delegate to EmbeddingProvider.embedText()
+    ↓
+OllamaEmbeddingProvider builds request
+    ├── URL: {baseUrl}/api/embed
+    ├── Body: { model, input }
+    └─ Headers: Content-Type: application/json
+    ↓
+Fetch with timeout (AbortController)
+    ↓
+Ollama processes request
+    ↓
+Response validation
+    ├── Check status code (404 → model unavailable)
+    ├── Parse JSON response
+    ├── Validate embeddings field and first vector
+    └─ Validate vector values
+    ↓
+Create EmbeddingResult
+    ↓
+Return to caller
+```
+
+### Batch Embedding Flow
+
+```
+Text[] input
+    ↓
+EmbeddingService.embedBatch()
+    ↓
+Validate batch (not empty, all texts valid)
+    ↓
+Check batch size vs configured batchSize
+    ↓
+If small batch:
+    Send directly to provider
+    ↓
+If large batch:
+    Split into chunks of batchSize
+    Process each chunk sequentially
+    Combine results
+    ↓
+Validate dimension consistency across all results
+    ↓
+Return EmbeddingResult[]
+```
+
+### Ollama Provider Error Flow
+
+```
+Ollama API error occurs
+    ↓
+Provider catches error
+    ↓
+Check error type
+    ├── 404 status → EmbeddingModelUnavailableError
+    ├── Timeout → EmbeddingTimeoutError
+    ├── Invalid response → EmbeddingInvalidResponseError
+    ├── Network error → EmbeddingProviderError
+    └─ Other → EmbeddingProviderError
+    ↓
+Error includes model name and status when applicable
+    ↓
+Service layer handles error
+    ↓
+Return appropriate error response to caller
+```
+
 ### Chunking Flow (Milestone 4B)
 
 ```
@@ -576,11 +702,13 @@ Chunking Service (Milestone 4B - COMPLETED)
     ↓
 CodeChunk[]
     ↓
-Embedding Service (Milestone 5 - PENDING)
+Embedding Service (Milestone 5A - COMPLETED)
     ├── Vector generation
     └── Model selection
     ↓
-Qdrant Storage (Milestone 5 - PENDING)
+EmbeddingResult[]
+    ↓
+Qdrant Storage (Milestone 5B - PENDING)
     ├── Vector insertion
     └── Metadata indexing
 ```
@@ -650,15 +778,18 @@ File Processing Service (Milestone 4A)
     ├── File filtering
     ├── Language detection
     ├── Binary detection
-    └── File normalization
+    └─ File normalization
     ↓
 GitHub Service downloads file contents
     ↓
 Chunking Service (Milestone 4B - COMPLETED) splits into chunks
     ↓
-Embedding Service (Milestone 5 - PENDING) generates vectors
+Embedding Service (Milestone 5A - COMPLETED) generates vectors
+    ├── OllamaEmbeddingProvider
+    ├── Batch processing
+    └─ Dimension validation
     ↓
-Vector Service (Milestone 5 - PENDING) stores in Qdrant
+Vector Service (Milestone 5B - PENDING) stores in Qdrant
     ↓
 PostgreSQL stores metadata
     ↓
@@ -677,6 +808,9 @@ Frontend sends question to backend
 POST /api/repositories/:id/chat
     ↓
 Embedding Service converts question to vector
+    ├── EmbeddingService.embedText()
+    ├── OllamaEmbeddingProvider
+    └─ Ollama API
     ↓
 Vector Service searches Qdrant
     ↓
@@ -831,6 +965,42 @@ Cleanup and notification
                       └──────────────┘
 ```
 
+### Embedding Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              EmbeddingService (Orchestration)               │
+│  - Input validation                                          │
+│  - Batch processing                                          │
+│  - Dimension consistency validation                          │
+│  - Configuration management                                  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│           EmbeddingProvider (Abstraction)                    │
+│  - embedText(text)                                          │
+│  - embedBatch(texts[])                                      │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│          OllamaEmbeddingProvider (Implementation)            │
+│  - HTTP client with timeout                                  │
+│  - Native batch API with sequential fallback                 │
+│  - Response validation                                       │
+│  - Error mapping                                             │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Ollama API                                │
+│  - POST /api/embed                                          │
+│  - Model: nomic-embed-text (configurable)                    │
+│  - Local execution: http://localhost:11434                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ### Data Flow Example: Chat with Repository
 
 ```
@@ -850,7 +1020,7 @@ Cleanup and notification
 │  (Express)     │
 └────┬────────────┘
      │
-     ├─→ Embedding Service → Ollama → Vector
+     ├─→ Embedding Service → OllamaEmbeddingProvider → Ollama → Vector
      │
      ├─→ Vector Service → Qdrant Search → Relevant Chunks
      │

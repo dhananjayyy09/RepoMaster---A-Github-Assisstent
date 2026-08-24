@@ -2,6 +2,102 @@
 
 This file tracks all changes made to the GitHub Knowledge Assistant project by the AI assistant.
 
+## [2026-08-24] Milestone 5A: Ollama Embedding Service
+
+### Embedding Module Structure
+- **File:** `backend/src/embeddings/`
+  - Created dedicated embedding module with types, errors, service, provider, utils, and index
+  - Isolated embedding logic from chunking and future vector storage
+  - Clean separation of concerns for provider abstraction and embedding generation
+
+### Embedding Types
+- **File:** `backend/src/embeddings/embedding.types.ts`
+  - Added `EmbeddingResult` interface with fields: vector, dimensions, model, inputLength
+  - Added `EmbeddingConfig` interface with batchSize and timeoutMs
+  - Added `EmbeddingProvider` interface for provider abstraction (embedText, embedBatch)
+  - Added `ProviderConfig` interface for provider-specific configuration
+  - Provider abstraction enables future support for OpenAI, Anthropic, etc.
+
+### Embedding Errors
+- **File:** `backend/src/embeddings/embedding.errors.ts`
+  - Added `EmbeddingError` base class extending AppError
+  - Added `EmbeddingProviderError` for provider operation failures
+  - Added `EmbeddingModelUnavailableError` for missing/unavailable models
+  - Added `EmbeddingInvalidResponseError` for malformed provider responses
+  - Added `EmbeddingDimensionMismatchError` for inconsistent vector dimensions
+  - Added `EmbeddingInputError` for invalid text input
+  - Added `EmbeddingTimeoutError` for request timeouts
+  - Fixed prototype chain for proper instanceof checks
+
+### Testing
+- **File:** `backend/src/test/embedding.test.ts`
+  - Added 30+ comprehensive unit tests for embedding module
+  - Utility tests: input validation, vector validation, dimension checking
+  - Error tests: all error types with proper instanceof checks
+  - Provider tests: single embedding, batch embedding, error handling, timeout
+  - Service tests: single embedding, batch embedding, dimension validation, chunking
+  - All tests use mocked fetch, no live Ollama dependency
+  - Tests cover success cases, error cases, edge cases, and fallback behavior
+
+### .env.example Updates
+- **File:** `.env.example`
+  - Added `OLLAMA_TIMEOUT_MS=30000` with documentation
+  - Added `EMBEDDING_BATCH_SIZE=10` with documentation
+  - Added `MAX_FILE_SIZE_BYTES=1048576` (was missing)
+  - Added `MAX_CHUNK_LINES=100` and `CHUNK_OVERLAP_LINES=10` (were missing)
+
+### Architecture Decisions
+- Provider abstraction pattern for embedding generation
+- Ollama as initial provider with easy switch to cloud providers
+- Deterministic dimension detection from actual embeddings (not hardcoded)
+- Configurable batch size for efficient processing
+- Timeout handling to prevent hanging requests
+- Native batch API with sequential fallback for compatibility
+- Clean separation: Service → Provider → Ollama API
+- No external dependencies for HTTP (uses built-in fetch)
+- Application-level types isolated from Ollama-specific responses
+
+### Integration Boundaries
+- Embedding consumes CodeChunk content from Milestone 4B
+- Produces EmbeddingResult[] for future vector storage (Milestone 5B)
+- Independent of Qdrant, PostgreSQL, Redis
+- Clean separation from chunking and future vector storage
+- No database operations in this milestone
+- No Qdrant operations in this milestone
+
+### Ollama Configuration
+- Default model: nomic-embed-text
+- Default endpoint: http://localhost:11434
+- Default timeout: 30 seconds
+- Default batch size: 10 texts
+- Model must be manually installed/pulled (no automatic downloads)
+- Clear error messages when model is unavailable
+
+### Embedding Utilities
+- **File:** `backend/src/embeddings/embedding.utils.ts`
+  - Added input, batch, vector, and dimension validation helpers.
+  - Added input-length and display truncation helpers.
+
+### Ollama Embedding Provider
+- **File:** `backend/src/embeddings/ollama.provider.ts`
+  - Added `/api/embed` integration for single and native batch requests.
+  - Parses Ollama's `embeddings` array response and maps it to `EmbeddingResult`.
+  - Added timeout, model-unavailable, provider, malformed-response, and vector validation handling.
+
+### Embedding Service
+- **File:** `backend/src/embeddings/embedding.service.ts`
+  - Added provider-independent single and batch orchestration.
+  - Added configurable batch splitting and cross-batch dimension validation.
+
+### Configuration and Testing
+- **Files:** `backend/src/config/index.ts`, `.env.example`
+  - Added configurable Ollama timeout, embedding model, and batch size settings.
+- **File:** `backend/src/test/embedding.test.ts`
+  - Added mocked tests for `/api/embed` single and batch `embeddings` responses, validation, errors, batching, and provider replacement.
+- Added regression coverage for malformed JSON responses and mapped them to `EmbeddingInvalidResponseError`.
+- Service-level testing sufficient for current requirements
+- API endpoints deferred to Milestone 8
+
 ## [2026-08-23] Milestone 4B: Code Chunking & Metadata
 
 ### Chunking Module Structure
@@ -216,8 +312,6 @@ This file tracks all changes made to the GitHub Knowledge Assistant project by t
   - Updated tests to use helper function
 - **File:** `backend/src/test/manual-verification.ts`
   - Added test for Base64 decoding helper
-
-### Repository Metadata Retrieval
 
 ### Repository Metadata Retrieval
 - **File:** `backend/src/github/github.service.ts`
