@@ -956,6 +956,104 @@ This file documents the rationale behind key technical decisions made during the
 
 ## Security Decisions
 
+## Vector Storage Decisions
+
+### Milestone 5B Storage Boundary
+**Decision:** Keep Qdrant responsible for vector persistence while PostgreSQL remains responsible for relational application data.
+**Rationale:**
+- Embeddings are stored beside searchable metadata without adding vector columns or tables to Prisma.
+- The vector-store module can evolve independently of the existing GitHub, file-processing, chunking, and embedding modules.
+- Search and retrieval remain outside this storage-only milestone.
+
+### Official Qdrant Client
+**Decision:** Use `@qdrant/js-client-rest` behind a dedicated client wrapper and service.
+**Rationale:**
+- Uses the supported TypeScript client rather than scattering raw HTTP calls.
+- Centralizes Qdrant URL, timeout, connectivity, and SDK interaction.
+- Keeps Qdrant-specific response and error handling out of the rest of the application.
+
+### Configurable Collection
+**Decision:** Use one configurable collection, defaulting to `repository_chunks`.
+**Rationale:**
+- Avoids creating one collection per repository.
+- Supports future multi-repository isolation through payload metadata.
+- Collection name, batch size, URL, and timeout are environment-configurable.
+
+### Cosine Distance and Dynamic Dimensions
+**Decision:** Use cosine distance and derive collection size from the actual `EmbeddingResult.dimensions` value.
+**Rationale:**
+- Cosine distance matches the normalized semantic embedding use case.
+- Different models may produce different dimensions, so `768` is not hardcoded.
+- Existing collection mismatches fail safely instead of deleting or recreating stored data.
+
+### Typed Payload Metadata
+**Decision:** Store a strongly typed payload containing repository, file, chunk, source-range, language, SHA, and size metadata.
+**Rationale:**
+- Preserves the information required for future source attribution and filtering.
+- Avoids duplicating chunk content or vector data in the payload.
+- Enables repository- and file-level deletion through Qdrant filters.
+
+### Idempotent Upsert and Deletion
+**Decision:** Derive each point ID from stable repository and chunk identity, and use Qdrant upsert/filter-delete operations.
+**Rationale:**
+- Re-indexing the same logical chunk updates its point instead of creating duplicates.
+- Filtered deletion avoids retrieving every matching point into application memory.
+- Single-point deletion supports targeted cleanup.
+
+### SDK Response Compatibility
+**Decision:** Map the installed SDK's unwrapped response fields rather than assuming raw REST response nesting.
+**Rationale:**
+- `getCollection()` exposes `points_count` at the top level.
+- Delete operations can report `acknowledged` as well as `completed`.
+- Correct response mapping makes live operation counts and health observable.
+
+### Live and Automated Verification
+**Decision:** Keep Jest tests fully mocked and use a separate local-service verification script for Ollama plus Qdrant.
+**Rationale:**
+- Automated tests remain deterministic and independent of Docker availability.
+- Manual verification validates the real SDK/server contract, including point IDs and stored counts.
+- Temporary verification data is isolated in a `test_` collection and removed by repository/file filters.
+
+### Qdrant Collection Strategy
+**Decision:** Store all repository chunks in one configurable Qdrant collection.
+**Rationale:**
+- Keeps the storage boundary independent of repository count.
+- Repository identity remains available in payload metadata for future filtering.
+- Avoids creating and managing one collection per repository.
+
+### Dynamic Collection Dimensions
+**Decision:** Initialize collections from the actual embedding dimension and reject incompatible existing collections.
+**Rationale:**
+- Different embedding models can produce different vector sizes.
+- Prevents incompatible vectors from entering an existing collection.
+- Avoids destructive automatic collection recreation.
+
+### Deterministic Qdrant Point IDs
+**Decision:** Derive a UUID-compatible point ID from `repositoryId:chunkId` using SHA-256.
+**Rationale:**
+- Repeated indexing updates the same logical point instead of creating duplicates.
+- Qdrant accepts the resulting UUID representation.
+- The identity remains deterministic without adding another dependency.
+
+### Payload and Deletion Strategy
+**Decision:** Store typed chunk and repository metadata in payloads and use Qdrant filters for repository/file deletion.
+**Rationale:**
+- Preserves citation-relevant source information beside each vector.
+- Avoids loading all matching points into application memory.
+- Keeps vectors in Qdrant and relational data in PostgreSQL.
+
+### Qdrant SDK Response Handling
+**Decision:** Treat the installed SDK's top-level `points_count` and `acknowledged` responses as authoritative.
+**Rationale:**
+- The SDK unwraps Qdrant's response `result` before returning it.
+- Correct mapping makes live counts and successful deletion results observable.
+
+### No Search in Milestone 5B
+**Decision:** Limit this milestone to vector persistence and deletion.
+**Rationale:**
+- Search, retrieval, and RAG belong to later milestones.
+- Keeping them out preserves a clear storage boundary and avoids premature API design.
+
 ### Helmet Middleware
 **Decision:** Added Helmet security headers
 **Rationale:**

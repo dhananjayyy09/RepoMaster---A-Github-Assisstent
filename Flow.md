@@ -545,6 +545,91 @@ Dimension Consistency Check (batch only)
 Return EmbeddingResult[]
 ```
 
+### Vector Storage Flow (Milestone 5B)
+
+```
+CodeChunk
+    ↓
+EmbeddingService
+    ↓
+EmbeddingResult
+    ↓
+QdrantVectorService
+    ↓
+Ensure collection from embedding dimensions
+    ↓
+Generate deterministic UUID point ID
+    ↓
+Build typed metadata payload
+    ↓
+Qdrant collection
+    ↓
+Stored vector + payload
+```
+
+The vector-store input carries the repository ID, repository-file ID, repository owner/name, the `CodeChunk`, and its `EmbeddingResult`. The service stores the embedding vector as the Qdrant vector and stores source metadata as the payload.
+
+### Collection Initialization Flow
+
+```
+EmbeddingResult.dimensions
+    ↓
+QdrantVectorService.ensureCollection()
+    ↓
+Check configured collection
+    ├── Missing → Create with dynamic size and Cosine distance
+    └── Exists → Read vector configuration
+                    ↓
+          Verify size and distance
+                    ├── Compatible → Reuse
+                    └── Mismatch → CollectionDimensionMismatchError
+```
+
+The service never recreates an existing collection when dimensions differ.
+
+### Vector Upsert and Deletion Flow
+
+```
+Single or batch EmbeddingResult input
+    ↓
+Validate vector values and collection dimension
+    ↓
+Generate deterministic UUID point ID(s)
+    ↓
+Build repository/file/chunk metadata payload
+    ↓
+Upsert point(s) with vector and payload
+    ↓
+Return application-level storage result
+```
+
+```
+Delete point, repository, or file
+    ↓
+Qdrant point ID or payload filter
+    ↓
+Qdrant delete operation
+    ↓
+Return deletion result
+```
+
+Repository deletion filters on `repositoryId`; file deletion filters on `repositoryFileId`. Filtered deletion returns an acknowledged result with an unknown exact count, while single-point deletion reports one deleted point when Qdrant acknowledges the operation.
+
+### Vector Store Error Flow
+
+```
+Qdrant operation fails
+    ↓
+QdrantVectorService maps SDK failure
+    ├── Dimension conflict → CollectionDimensionMismatchError
+    ├── Invalid vector/payload → VectorValidationError or VectorPayloadError
+    ├── Collection failure → QdrantCollectionError
+    ├── Upsert failure → QdrantUpsertError
+    └── Delete failure → QdrantDeleteError
+    ↓
+Application-level error returned to caller
+```
+
 ### Single Text Embedding Flow
 
 ```
@@ -688,7 +773,7 @@ Metadata Creation
 Return CodeChunk[]
 ```
 
-### Future Milestone 5 Handoff
+### Milestone 5B Storage Handoff
 
 ```
 File Processing Service (Milestone 4A - COMPLETED)
@@ -708,7 +793,7 @@ Embedding Service (Milestone 5A - COMPLETED)
     ↓
 EmbeddingResult[]
     ↓
-Qdrant Storage (Milestone 5B - PENDING)
+Qdrant Storage (Milestone 5B - COMPLETED)
     ├── Vector insertion
     └── Metadata indexing
 ```
@@ -789,7 +874,7 @@ Embedding Service (Milestone 5A - COMPLETED) generates vectors
     ├── Batch processing
     └─ Dimension validation
     ↓
-Vector Service (Milestone 5B - PENDING) stores in Qdrant
+Vector Service (Milestone 5B - COMPLETED) stores in Qdrant
     ↓
 PostgreSQL stores metadata
     ↓

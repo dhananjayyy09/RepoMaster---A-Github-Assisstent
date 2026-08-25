@@ -8,10 +8,6 @@ import {
 import type { EmbeddingProvider, EmbeddingResult } from './embedding.types';
 import { validateVector, calculateInputLength } from './embedding.utils';
 
-/**
- * Ollama API response types.
- * These are specific to Ollama's API structure.
- */
 interface OllamaEmbedRequest {
   model: string;
   input: string;
@@ -30,10 +26,6 @@ interface OllamaBatchEmbedResponse {
   embeddings: number[][];
 }
 
-/**
- * Ollama-specific implementation of the EmbeddingProvider interface.
- * Handles all HTTP communication with the local Ollama instance.
- */
 export class OllamaEmbeddingProvider implements EmbeddingProvider {
   private baseUrl: string;
   private model: string;
@@ -49,9 +41,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     this.timeout = options?.timeout || config.ai.ollama.timeoutMs;
   }
 
-  /**
-   * Helper method to make HTTP requests to Ollama with timeout.
-   */
   private async fetchWithTimeout(
     url: string,
     options: RequestInit
@@ -79,9 +68,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     }
   }
 
-  /**
-   * Generates an embedding for a single text using Ollama.
-   */
   async embedText(text: string): Promise<EmbeddingResult> {
     const url = `${this.baseUrl}/api/embed`;
     const requestBody: OllamaEmbedRequest = {
@@ -123,7 +109,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
         );
       }
 
-      // Extract the first embedding for single text input
       const vector = data.embeddings[0];
       validateVector(vector);
 
@@ -147,19 +132,10 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     }
   }
 
-  /**
-   * Generates embeddings for multiple texts using Ollama.
-   * Note: Ollama's API supports batch embedding via the /api/embed endpoint
-   * with multiple prompts in newer versions. For compatibility, we'll use
-   * sequential calls if batch API is not available.
-   */
   async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
-    // Try batch API first (available in newer Ollama versions)
     try {
       return await this.embedBatchNative(texts);
     } catch (error) {
-      // Only fall back to sequential for network errors or API unavailability
-      // Don't fall back for validation errors (those should propagate)
       if (
         error instanceof EmbeddingTimeoutError ||
         error instanceof EmbeddingModelUnavailableError ||
@@ -167,14 +143,10 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
       ) {
         return await this.embedBatchSequential(texts);
       }
-      // Re-throw validation and other errors
       throw error;
     }
   }
 
-  /**
-   * Attempts to use Ollama's native batch embedding API.
-   */
   private async embedBatchNative(texts: string[]): Promise<EmbeddingResult[]> {
     const url = `${this.baseUrl}/api/embed`;
     const requestBody: OllamaBatchEmbedRequest = {
@@ -217,7 +189,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
       );
     }
 
-    // Validate all vectors and convert to EmbeddingResult
     return data.embeddings.map((vector, index) => {
       validateVector(vector);
       return {
@@ -229,10 +200,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     });
   }
 
-  /**
-   * Fallback method: generates embeddings sequentially one by one.
-   * Used when the batch API is not available or fails.
-   */
   private async embedBatchSequential(texts: string[]): Promise<EmbeddingResult[]> {
     const results: EmbeddingResult[] = [];
 
@@ -250,16 +217,10 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     return results;
   }
 
-  /**
-   * Gets the current model being used.
-   */
   getModel(): string {
     return this.model;
   }
 
-  /**
-   * Gets the current base URL.
-   */
   getBaseUrl(): string {
     return this.baseUrl;
   }

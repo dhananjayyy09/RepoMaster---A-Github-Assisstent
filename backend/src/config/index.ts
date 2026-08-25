@@ -16,6 +16,9 @@ const envSchema = z.object({
   // Qdrant
   QDRANT_URL: z.string().url().default('http://localhost:6333'),
   QDRANT_API_KEY: z.string().optional(),
+  QDRANT_COLLECTION_NAME: z.string().default('repository_chunks'),
+  QDRANT_UPSERT_BATCH_SIZE: z.string().default('100'),
+  QDRANT_TIMEOUT_MS: z.string().default('30000'),
   
   // GitHub
   GITHUB_API_URL: z.string().url().default('https://api.github.com'),
@@ -66,6 +69,9 @@ export const config = {
   qdrant: {
     url: env.QDRANT_URL,
     apiKey: env.QDRANT_API_KEY,
+    collectionName: env.QDRANT_COLLECTION_NAME,
+    upsertBatchSize: parseInt(env.QDRANT_UPSERT_BATCH_SIZE, 10),
+    timeoutMs: parseInt(env.QDRANT_TIMEOUT_MS, 10),
   },
   
   github: {

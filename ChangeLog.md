@@ -2,6 +2,90 @@
 
 This file tracks all changes made to the GitHub Knowledge Assistant project by the AI assistant.
 
+## [2026-08-26] Milestone 5B: Qdrant Vector Storage
+
+### Vector Store Module Structure
+- **File:** `backend/src/vector-store/index.ts`
+  - Created the vector-store barrel export for types, errors, utilities, the Qdrant client wrapper, and the storage service.
+- **File:** `backend/src/vector-store/qdrant.client.ts`
+  - Added `QdrantClientWrapper` for configurable client construction, URL handling, timeout configuration, and connectivity checks.
+- **File:** `backend/src/vector-store/qdrant.service.ts`
+  - Added `QdrantVectorService` for collection management, vector upserts, batch upserts, point deletion, filtered deletion, collection inspection, and health checks.
+- **File:** `backend/src/vector-store/vector.types.ts`
+  - Added application-level storage contracts for configuration, vector inputs/results, collection configuration, health results, and typed repository chunk payloads.
+- **File:** `backend/src/vector-store/vector.errors.ts`
+  - Added application-level errors for connection, collection, upsert, delete, payload, vector validation, health, and dimension failures.
+- **File:** `backend/src/vector-store/vector.utils.ts`
+  - Added deterministic point-ID generation, vector validation, payload validation, vector dimension measurement, and dimension consistency helpers.
+
+### Qdrant Dependency and Configuration
+- **File:** `backend/package.json`
+  - Added the official `@qdrant/js-client-rest` dependency.
+- **File:** `backend/package-lock.json`
+  - Recorded the Qdrant client dependency and its resolved package metadata.
+- **File:** `backend/src/config/index.ts`
+  - Added `QDRANT_COLLECTION_NAME` with default `repository_chunks`.
+  - Added `QDRANT_UPSERT_BATCH_SIZE` with default `100`.
+  - Added `QDRANT_TIMEOUT_MS` with default `30000`.
+  - Exposed the Qdrant URL, collection name, batch size, and timeout through the existing typed configuration object.
+- **File:** `.env.example`
+  - Added placeholder configuration for Qdrant collection name, upsert batch size, and timeout.
+- **File:** `docker-compose.yml`
+  - Reused the existing local Qdrant service; no replacement installation was added.
+
+### Collection Management
+- Added one configurable collection for repository chunks rather than one collection per repository
+- Created collections using the actual `EmbeddingResult.dimensions` value and `Cosine` distance
+- Reused existing collections only when their vector dimension and distance configuration was compatible
+- Raised an application-level `CollectionDimensionMismatchError` for dimension conflicts without deleting or recreating stored data
+- Added collection inspection for name, vector dimension, distance metric, point count, and health status
+- Added single and batch vector upserts with configurable batch splitting
+- Added single-point deletion and repository/file-filtered deletion using Qdrant filters
+
+### Vector Storage and Payloads
+- **File:** `backend/src/vector-store/vector.types.ts`
+  - Added typed repository chunk payload metadata for repository, file, chunk, source, and ownership information
+- **File:** `backend/src/vector-store/vector.utils.ts`
+  - Added vector and payload validation before Qdrant writes
+- Single upsert stores `EmbeddingResult.vector` and maps the related `CodeChunk` and repository identifiers into a Qdrant point
+- Batch upsert validates dimensions, splits requests according to `QDRANT_UPSERT_BATCH_SIZE`, preserves metadata association, and returns the submitted point count
+- Repeated upserts for the same repository and chunk identity update the same point
+- Payload metadata includes `repositoryId`, `repositoryFileId`, `filePath`, `fileName`, `extension`, `language`, `chunkIndex`, `totalChunks`, `chunkType`, `startLine`, `endLine`, `fileSha`, `repositoryOwner`, `repositoryName`, and `chunkSize`
+
+### Deterministic Point ID and SDK Compatibility Fixes
+- **File:** `backend/src/vector-store/vector.utils.ts`
+  - Replaced arbitrary deterministic base36 strings with UUID-compatible IDs derived from a SHA-256 hash of `repositoryId:chunkId`.
+
+- Mapped the installed SDK's top-level `points_count` collection field
+- Accepted the SDK's `acknowledged` delete status as a successful operation
+- Preserved safe Qdrant validation details in application-level upsert errors
+- The original live HTTP 400 was caused by Qdrant rejecting arbitrary string point IDs; the UUID-compatible representation resolved it.
+
+### Testing
+- **File:** `backend/src/test/vector-store.test.ts`
+  - Added mocked tests for collection creation and reuse, dynamic dimensions, Cosine distance, dimension mismatch handling, deterministic IDs, vector and payload validation, single/batch upserts, deletion filters, health checks, and application-level Qdrant errors.
+  - Added regression coverage for the invalid point-ID response and the SDK's top-level `points_count` and `acknowledged` response shapes.
+
+### Live Qdrant Verification
+- **File:** `backend/src/test/manual-qdrant-verification.ts`
+  - Added a separate local-service verification script using live Ollama embeddings and dynamically detected dimensions.
+  - Verifies Qdrant connectivity, collection setup, Cosine configuration, single upsert, repeat/idempotent upsert, batch upsert, point counts, single deletion, file-filtered deletion, repository-filtered deletion, and final collection health.
+  - Uses an isolated `test_` collection and removes temporary points without affecting unrelated collections.
+- Live verification passed with the current `nomic-embed-text` output dimension of `768`.
+
+### Architecture Decisions
+- One configurable Qdrant collection stores repository chunks across repositories
+- Collection dimensions are detected from actual embedding results rather than hardcoded
+- UUID-compatible deterministic point IDs preserve idempotent updates
+- Application-level types and errors isolate Qdrant SDK details from the rest of the system
+- Filtered deletion avoids loading all matching points into application memory
+
+### Integration Boundaries
+- Vector storage consumes `CodeChunk` data from Milestone 4B and `EmbeddingResult` data from Milestone 5A
+- Independent of Prisma, Redis jobs, background workers, search, semantic retrieval, RAG, chat, and frontend API endpoints
+- No Prisma schema or migrations were modified
+- Search, semantic retrieval, RAG, chat, and API integration remain deferred to later milestones
+
 ## [2026-08-24] Milestone 5A: Ollama Embedding Service
 
 ### Embedding Module Structure
