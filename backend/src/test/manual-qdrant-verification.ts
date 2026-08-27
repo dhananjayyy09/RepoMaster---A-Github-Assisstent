@@ -122,7 +122,7 @@ async function main() {
     if (repositoryDelete.deletedCount !== -1 || (await service.getCollectionConfig()).vectorsCount !== 0) {
       throw new Error('Repository-filtered deletion did not clean the test points');
     }
-    console.log('Repository vectors deleted:', repositoryDelete);
+    console.log('Repository vectors deleted:', repositoryDelete); 
 
     console.log('10. Verifying final collection health...');
     const finalHealth = await service.checkHealth();
