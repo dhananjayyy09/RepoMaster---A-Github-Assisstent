@@ -1345,6 +1345,36 @@ Step 3
 
 ## Current Architecture (Milestone 4B Complete)
 
+## Background Indexing Foundation (Milestone 6A)
+
+```
+Create Indexing Job
+    ↓
+PostgreSQL IndexingJob (PENDING; durable source of truth)
+    ↓
+IndexingJobQueue.enqueue({ jobId, repositoryId })
+    ↓
+Redis pending list + job-id membership set
+    ↓
+Worker atomically moves item to Redis processing list
+    ↓
+PostgreSQL status becomes INDEXING
+    ↓
+Injected Job Handler (Milestone 6B indexing handler: PENDING)
+    ↓
+    ├─ Success → PostgreSQL COMPLETED → Redis acknowledgement
+    ├─ Retryable failure within limit → PostgreSQL FAILED (error retained)
+    │                              → Redis retry metadata/pending list
+    │                              → PostgreSQL PENDING for next attempt
+    └─ Non-retryable or exhausted failure → PostgreSQL FAILED → Redis cleanup
+```
+
+**Progress flow:** a future handler calls `IndexingJobService.updateProgress`; progress (0–100), current step, and actual file/chunk/embedding counters are validated and persisted in PostgreSQL. Redis never stores permanent progress.
+
+**Idempotency:** Redis membership uses the existing indexing-job ID as operation identity. A duplicate enqueue returns `false`; acknowledgement or terminal failure frees the ID for a later explicit operation.
+
+**Milestone 6B - PENDING:** The handler will perform GitHub retrieval, filtering/normalization, chunking, embedding generation, and Qdrant writes. None of those steps are implemented by 6A.
+
 ```
 ProcessedFile
     ↓

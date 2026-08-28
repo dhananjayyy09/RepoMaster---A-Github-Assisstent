@@ -2,6 +2,58 @@
 
 This file tracks all changes made to the GitHub Knowledge Assistant project by the AI assistant.
 
+## [2026-08-29] Milestone 6A: Background Indexing Foundation
+
+#### Queue Module
+
+- **File:** `backend/src/queue/queue.types.ts`
+  - Added application-level job IDs, repository IDs, payload, progress, result, retry, and Redis command-client types.
+  - Reused Prisma `JobStatus` for persistent job-state typing.
+- **File:** `backend/src/queue/queue.errors.ts`
+  - Added queue, Redis-connection, invalid-payload, retry-exhausted, and handler errors with working `instanceof` behavior.
+- **File:** `backend/src/queue/redis.client.ts`
+  - Added one lazily connected official Redis client with connection lifecycle management and mapped command errors.
+- **File:** `backend/src/queue/indexing-job.queue.ts`
+  - Added enqueue, atomic pending-to-processing dequeue, acknowledgement, failure, retry, retry-attempt lookup, and membership-set duplicate prevention.
+  - Stores only the indexing job ID and repository ID in queue payloads.
+  - Rolls back the membership marker when the Redis pending-list write fails, so a failed enqueue does not permanently block a later retry.
+- **File:** `backend/src/queue/indexing-job.worker.ts`
+  - Added the injected-handler worker foundation for durable starts, successes, failures, and bounded retries.
+  - Does not implement the Milestone 6B indexing handler.
+- **File:** `backend/src/queue/index.ts`
+  - Added the queue module barrel export.
+
+#### Existing Application Files
+
+- **File:** `backend/src/services/indexingJob.service.ts`
+  - Added create-and-enqueue, enqueue, retry preparation, and combined progress/statistics operations.
+  - Validates 0–100 progress and non-negative integer counters.
+- **File:** `backend/src/config/index.ts`
+  - Added validated queue name, maximum retries, retry delay, and testable environment parsing.
+- **File:** `.env.example`
+  - Added documented queue and retry environment defaults.
+- **File:** `backend/package.json`
+  - Added the official `redis` dependency and the `verify:redis-queue` command.
+- **File:** `backend/package-lock.json`
+  - Recorded the resolved Redis package tree.
+
+#### Tests and Verification
+
+- **File:** `backend/src/test/queue.test.ts`
+  - Added mocked Redis configuration, connection-error, queue lifecycle, duplicate, retry, exhaustion, progress, and worker tests.
+  - Added regression coverage for membership rollback after an enqueue write failure and for valid and invalid durable progress/counter persistence.
+- **File:** `backend/src/test/manual-redis-queue-verification.ts`
+  - Added isolated live Redis verification for connection, enqueue, processing, acknowledgement, retry, and cleanup.
+
+### Verification Results
+- Focused queue tests passed: 13 tests.
+- Full backend Jest suite passed: 6 suites and 329 tests.
+- TypeScript check, production build, PostgreSQL smoke test, and manual Redis queue verification passed.
+
+### Known Limitations
+- Retry delays are intentionally in-process and abandoned-processing recovery is deferred.
+- The actual indexing pipeline is explicitly deferred to Milestone 6B.
+
 ## [2026-08-26] Milestone 5B: Qdrant Vector Storage
 
 ### Vector Store Module Structure

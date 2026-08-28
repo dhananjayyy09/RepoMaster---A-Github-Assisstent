@@ -11,7 +11,10 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   
   // Redis
-  REDIS_URL: z.string().default('redis://localhost:6379'),
+  REDIS_URL: z.string().url().default('redis://localhost:6379'),
+  JOB_QUEUE_NAME: z.string().min(1).default('indexing-jobs'),
+  JOB_MAX_RETRIES: z.coerce.number().int().min(0).default(3),
+  JOB_RETRY_DELAY_MS: z.coerce.number().int().min(0).default(1000),
   
   // Qdrant
   QDRANT_URL: z.string().url().default('http://localhost:6333'),
@@ -52,7 +55,11 @@ const envSchema = z.object({
   EMBEDDING_BATCH_SIZE: z.string().default('10'), // 10 texts per batch
 });
 
-const env = envSchema.parse(process.env);
+export function parseEnvironment(input: NodeJS.ProcessEnv = process.env) {
+  return envSchema.parse(input);
+}
+
+const env = parseEnvironment();
 
 export const config = {
   env: env.NODE_ENV,
@@ -64,6 +71,9 @@ export const config = {
   
   redis: {
     url: env.REDIS_URL,
+    jobQueueName: env.JOB_QUEUE_NAME,
+    jobMaxRetries: env.JOB_MAX_RETRIES,
+    jobRetryDelayMs: env.JOB_RETRY_DELAY_MS,
   },
   
   qdrant: {

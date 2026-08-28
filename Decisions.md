@@ -2,6 +2,28 @@
 
 This file documents the rationale behind key technical decisions made during the development of the GitHub Knowledge Assistant.
 
+## Milestone 6A: Background Indexing Foundation
+
+### Redis Coordinates; PostgreSQL Persists
+**Decision:** Use Redis only for pending/active work coordination and PostgreSQL for the durable job record, progress, counters, error text, and timestamps.
+
+**Rationale:** Redis provides lightweight atomic list movement without becoming the authoritative job history. Losing Redis does not make a Redis record the persistent source of truth.
+
+### Existing Statuses and Minimal Payload
+**Decision:** Retain Prisma `PENDING`, `INDEXING`, `COMPLETED`, and `FAILED`; represent `QUEUED` and `PROCESSING` only as Redis queue conditions. Queue entries contain only `jobId` and `repositoryId`.
+
+**Rationale:** This avoids a conflicting status system and keeps large repository content and embeddings out of Redis.
+
+### Idempotency and Retry
+**Decision:** Use the durable indexing job ID as the queue identity, with a Redis membership set to suppress duplicate enqueues. Retryability is explicit on `JobHandlerError`; attempts are bounded by configuration and terminal failures remain `FAILED` in PostgreSQL.
+
+**Rationale:** This is understandable and sufficient for a single worker foundation without prematurely adding distributed locking or recovery systems.
+
+### Handler Boundary
+**Decision:** The worker accepts an injected handler and owns lifecycle coordination only.
+
+**Rationale:** GitHub retrieval, file processing, chunking, embeddings, and Qdrant writes remain deliberately deferred to Milestone 6B.
+
 ## Architecture Decisions
 
 ### Modular Monolith Architecture
