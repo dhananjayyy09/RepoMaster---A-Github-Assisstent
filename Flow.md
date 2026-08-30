@@ -852,10 +852,18 @@ Background Job triggered
 [Asynchronous Indexing Process - see Repository Indexing Flow]
 ```
 
-### Repository Indexing Flow (Milestone 6+)
+### Repository Indexing Flow (Milestone 6B - COMPLETED)
 
 ```
 Background Job Starts
+    ↓
+Redis Worker dequeues job
+    ↓
+IndexingPipeline validates job and repository
+    ↓
+GitHub Service fetches repository metadata
+    ↓
+Update repository metadata in PostgreSQL
     ↓
 GitHub Service fetches file tree
     ↓
@@ -865,22 +873,30 @@ File Processing Service (Milestone 4A)
     ├── Binary detection
     └─ File normalization
     ↓
-GitHub Service downloads file contents
+For each processable file:
     ↓
-Chunking Service (Milestone 4B - COMPLETED) splits into chunks
+    GitHub Service downloads file content
     ↓
-Embedding Service (Milestone 5A - COMPLETED) generates vectors
+    File Normalizer normalizes file
+    ↓
+    RepositoryFile upsert (idempotent)
+    ↓
+    Chunking Service (Milestone 4B) splits into chunks
+    ↓
+    Embedding Service (Milestone 5A) generates vectors
     ├── OllamaEmbeddingProvider
     ├── Batch processing
     └─ Dimension validation
     ↓
-Vector Service (Milestone 5B - COMPLETED) stores in Qdrant
+    Vector Service (Milestone 5B) stores in Qdrant
     ↓
-PostgreSQL stores metadata
+    Delete old SHA vectors for changed files
     ↓
-Update indexing status to COMPLETED
+Reconcile stale files (delete vectors and records)
     ↓
-Notify frontend of completion
+Update repository counters and status
+    ↓
+Worker marks job COMPLETED
 ```
 
 ### RAG Pipeline Flow (Milestone 7+)
@@ -1373,7 +1389,142 @@ Injected Job Handler (Milestone 6B indexing handler: PENDING)
 
 **Idempotency:** Redis membership uses the existing indexing-job ID as operation identity. A duplicate enqueue returns `false`; acknowledgement or terminal failure frees the ID for a later explicit operation.
 
-**Milestone 6B - PENDING:** The handler will perform GitHub retrieval, filtering/normalization, chunking, embedding generation, and Qdrant writes. None of those steps are implemented by 6A.
+**Milestone 6B - COMPLETED:** The handler performs GitHub retrieval, filtering/normalization, chunking, embedding generation, and Qdrant writes.
+
+## Repository Indexing Pipeline (Milestone 6B - COMPLETED)
+
+```
+Indexing Job (PENDING in PostgreSQL)
+    ↓
+6A Redis Worker dequeues job payload
+    ↓
+Worker starts job (PostgreSQL: INDEXING, startedAt)
+    ↓
+IndexingPipeline.execute(payload)
+    ↓
+Validate job exists and matches payload repositoryId
+    ↓
+Validate repository exists and has GitHub owner/repo
+    ↓
+Update repository status to INDEXING
+    ↓
+Progress: 5%, currentStep: FETCHING_REPOSITORY
+    ↓
+GitHubService.getRepositoryMetadata(owner, repo)
+    ↓
+Update repository metadata (description, defaultBranch, stars, forks, primaryLanguage, dates)
+    ↓
+Progress: 12%, currentStep: DISCOVERING_FILES
+    ↓
+GitHubService.getRepositoryTree(owner, repo, defaultBranch)
+    ↓
+Handle GitHubTreeTruncatedError → fail job (non-retryable)
+    ↓
+FileFilterService.shouldProcess() for each tree item
+    ↓
+Filter: directories, ignored patterns, binary extensions, oversized files
+    ↓
+Keep only processable files (status === 'PROCESSABLE')
+    ↓
+Count filesDiscovered, progress: 20%, currentStep: PROCESSING_FILES
+    ↓
+Load prior RepositoryFile records for stale reconciliation
+    ↓
+For each processable file:
+    ↓
+    GitHubService.getFileContent(owner, repo, path, ref)
+    ↓
+    FileNormalizerService.normalizeFile(item, content)
+    ↓
+    Handle BinaryFileError/FileTooLargeError → skip file
+    ↓
+    Handle other normalization errors → fail job
+    ↓
+    If file is empty:
+        ↓
+        Upsert RepositoryFile with chunkCount=0
+        ↓
+        Delete any existing vectors for this file
+        ↓
+        Track as processed, skip chunking/embedding
+    ↓
+    ChunkingService.chunkFile(file) → CodeChunk[]
+    ↓
+    Upsert RepositoryFile with chunkCount
+    ↓
+    Progress update based on filesProcessed/filesDiscovered
+    ↓
+    Progress: file-progress%, currentStep: GENERATING_EMBEDDINGS
+    ↓
+    EmbeddingService.embedBatch(chunk contents) → EmbeddingResult[]
+    ↓
+    Validate embedding count matches chunk count
+    ↓
+    Progress: file-progress%, currentStep: STORING_VECTORS
+    ↓
+    QdrantVectorService.upsertVectors(chunks + embeddings)
+    ↓
+    QdrantVectorService.deleteFileVectorsExceptSha(fileId, currentSha)
+    ↓
+    Track filesProcessed, chunksCreated, embeddingsGenerated
+    ↓
+Progress: 92%, currentStep: RECONCILING_STALE_FILES
+    ↓
+For each prior RepositoryFile not in current tree:
+    ↓
+    QdrantVectorService.deleteFileVectors(fileId)
+    ↓
+    RepositoryFileService.deleteRepositoryFile(fileId)
+    ↓
+Update repository summary (fileCount, indexedFileCount, chunkCount)
+    ↓
+Progress: 98%, currentStep: FINALIZING
+    ↓
+Update repository status to COMPLETED, indexedAt
+    ↓
+Return pipeline result with counters
+    ↓
+Worker marks job COMPLETED (completedAt)
+    ↓
+Worker acknowledges queue item
+```
+
+**Failure/retry flow:**
+- Pipeline catches any error
+- Sets repository status to FAILED with error message
+- Throws JobHandlerError(message, isRetryable, cause)
+- Worker persists error in PostgreSQL
+- If retryable and within limit: worker retries job
+- If non-retryable or exhausted: worker marks job FAILED, cleans queue
+
+**Retryable errors:**
+- GitHubRateLimitError (temporary)
+- Temporary service connection failures
+- Network timeouts
+
+**Non-retryable errors:**
+- Invalid repository/job configuration
+- GitHubTreeTruncatedError (data integrity)
+- Validation failures (missing fields, mismatches)
+- Normalization errors (binary, malformed data)
+
+**Re-indexing behavior:**
+- RepositoryFile upsert is idempotent (unique constraint on repositoryId + filePath)
+- Vector IDs are deterministic (same chunk gets same point ID)
+- New vectors written before old SHA vectors deleted (safe replacement)
+- Stale files (deleted from tree) have vectors and records removed
+- Changed files: new chunks/embeddings/vectors, old vectors deleted
+
+**Progress calculation:**
+- Formula: 20% + (filesProcessed / filesDiscovered) * 70%
+- Final 10% reserved for reconciliation and finalization
+- If filesDiscovered = 0: progress stays at 90%
+
+**Counter semantics:**
+- filesDiscovered: processable files after filtering
+- filesProcessed: successfully normalized/chunked/persisted
+- chunksCreated: total chunks successfully produced
+- embeddingsGenerated: total vectors successfully generated
 
 ```
 ProcessedFile

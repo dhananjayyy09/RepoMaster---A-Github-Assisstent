@@ -74,6 +74,18 @@ export class RepositoryService {
     return repositoryRepository.updateIndexingStatus(id, status, error);
   }
 
+  async updateGitHubMetadata(id: string, data: {
+    description?: string | null;
+    defaultBranch: string;
+    stars: number;
+    forks: number;
+    primaryLanguage?: string | null;
+    githubCreatedAt: Date;
+    githubUpdatedAt: Date;
+  }): Promise<Repository> {
+    return repositoryRepository.update(id, data);
+  }
+
   async deleteRepository(id: string): Promise<Repository> {
     return repositoryRepository.delete(id);
   }

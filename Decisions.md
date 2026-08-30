@@ -24,6 +24,23 @@ This file documents the rationale behind key technical decisions made during the
 
 **Rationale:** GitHub retrieval, file processing, chunking, embeddings, and Qdrant writes remain deliberately deferred to Milestone 6B.
 
+## Milestone 6B: Repository Indexing Pipeline
+
+### Orchestration and Transactions
+**Decision:** Keep workflow business logic in `IndexingPipeline`, invoked by the existing worker, and use existing service/repository abstractions for each external or durable operation.
+
+**Rationale:** GitHub, Ollama, and Qdrant cannot participate in a PostgreSQL transaction. Each file is processed incrementally; database writes are limited to individual RepositoryFile/job/repository updates.
+
+### Progress, Failures, and Batching
+**Decision:** Progress follows actual metadata, discovery, per-file processing, embedding, vector storage, reconciliation, and finalization work. Only safely classified binary/oversized content is skipped after download; other file failures stop the job.
+
+**Rationale:** Counters remain meaningful, while silent partial indexes are avoided. Existing embedding and Qdrant batch operations control request sizes. The worker remains the sole retry authority.
+
+### Re-indexing and Vector Cleanup
+**Decision:** Upsert RepositoryFile by its existing repository/path uniqueness, write replacement vectors before deleting vectors with an older file SHA, then reconcile files no longer present in the processable tree.
+
+**Rationale:** Deterministic point IDs prevent duplicate unchanged chunks. Writing first avoids an avoidable zero-vector file when a replacement upsert fails; stale vectors and records are removed only after the current pass reaches reconciliation.
+
 ## Architecture Decisions
 
 ### Modular Monolith Architecture
@@ -977,6 +994,228 @@ This file documents the rationale behind key technical decisions made during the
 - Avoids security concerns with automatic downloads
 
 ## Security Decisions
+
+## Milestone 6B: Indexing Pipeline Decisions
+
+### Pipeline Orchestration Separation
+**Decision:** Create dedicated IndexingPipeline class separate from queue worker coordination
+**Rationale:**
+- Worker handles job lifecycle (queue operations, retry logic, state transitions)
+- Pipeline handles business workflow (GitHub → processing → chunking → embedding → Qdrant)
+- Clear separation of concerns enables testing and reuse
+- Pipeline can be used outside of queue context if needed
+- Follows single responsibility principle
+- Consistent with existing service/repository architecture
+
+### Dependency Injection Pattern
+**Decision:** Use dependency injection for all pipeline dependencies
+**Rationale:**
+- Pipeline receives all external services via constructor
+- Enables easy testing with mocked dependencies
+- No hardcoded service instances in pipeline
+- Follows dependency inversion principle
+- Makes pipeline behavior configurable
+- Consistent with existing service architecture
+
+### Incremental File Processing
+**Decision:** Process files one at a time instead of loading entire repository into memory
+**Rationale:**
+- Avoids memory exhaustion for large repositories
+- Respects existing file size limits from Milestone 4A
+- Enables real-time progress updates
+- Better error isolation (one file failure doesn't lose all progress)
+- Consistent with streaming processing pattern
+- Suitable for repositories with thousands of files
+
+### Real Progress Tracking
+**Decision:** Update progress based on actual work completed, not arbitrary increments
+**Rationale:**
+- Progress represents true pipeline state
+- Counter values are meaningful (files discovered, processed, chunks created, embeddings generated)
+- Users can monitor actual indexing progress
+- Better for debugging and monitoring
+- Prevents misleading progress indicators
+- Consistent with milestone requirements
+
+### Empty File Handling
+**Decision:** Record empty files but skip chunking and embedding
+**Rationale:**
+- Empty files are still part of repository structure
+- RepositoryFile record created with chunkCount=0
+- No wasted embedding computation
+- No meaningless vectors in Qdrant
+- Clear distinction between skipped files and processed files
+- Maintains repository file inventory
+
+### Atomic Vector Replacement Strategy
+**Decision:** Write new vectors before deleting old SHA vectors for changed files
+**Rationale:**
+- Avoids zero-vector state if upsert fails
+- Repository always has valid vectors during re-index
+- Safer than delete-then-write approach
+- Prevents partial state during failures
+- Maintains data integrity
+- Better user experience during re-indexing
+
+### Stale Vector Reconciliation
+**Decision:** Delete vectors and file records for files no longer in current tree
+**Rationale:**
+- Prevents accumulation of orphaned vectors
+- Qdrant collection reflects current repository state
+- RepositoryFile records stay synchronized
+- Clean state after successful re-index
+- Prevents search results from deleted files
+- Maintains data consistency
+
+### Repository Status Synchronization
+**Decision:** Keep Repository.indexingStatus synchronized with IndexingJob.status
+**Rationale:**
+- Single source of truth for repository indexing state
+- Repository status reflects current job state
+- Enables UI to show repository indexing status
+- Consistent across job lifecycle
+- Better for monitoring and debugging
+- Prevents state inconsistencies
+
+### Error Classification for Retry
+**Decision:** Classify errors as retryable vs non-retryable in pipeline
+**Rationale:**
+- Temporary failures (rate limits, network) can be retried
+- Permanent failures (invalid data, missing resources) should not retry
+- Worker uses retryable flag for retry decisions
+- Prevents infinite retry loops on non-retryable errors
+- Clear error handling strategy
+- Consistent with existing worker retry logic
+
+### Idempotent RepositoryFile Upsert
+**Decision:** Use existing unique constraints for idempotent file record creation
+**Rationale:**
+- Re-indexing updates existing records instead of creating duplicates
+- RepositoryFile uniqueness (repositoryId, filePath) prevents duplicates
+- Natural idempotency through database constraints
+- No need for complex deduplication logic
+- Consistent with existing repository service design
+- Clean and reliable re-indexing behavior
+
+### Deterministic Vector IDs for Re-indexing
+**Decision:** Reuse existing deterministic point ID generation from Milestone 5B
+**Rationale:**
+- Same logical chunk always gets same point ID
+- Re-indexing updates vectors instead of creating duplicates
+- No vector accumulation across multiple indexings
+- Consistent with existing Qdrant service design
+- Natural idempotency through deterministic IDs
+- Clean re-indexing behavior
+
+### Progress Calculation Strategy
+**Decision:** Calculate progress based on files processed relative to files discovered
+**Rationale:**
+- Progress represents actual work completed
+- Formula: 20% + (filesProcessed / filesDiscovered) * 70%
+- Reserve final 10% for reconciliation and finalization
+- More accurate than arbitrary increments
+- Better user experience
+- Reflects realistic pipeline timing
+
+### CurrentStep Enumeration
+**Decision:** Use discrete step names for progress tracking
+**Rationale:**
+- Clear stages: INITIALIZING, FETCHING_REPOSITORY, DISCOVERING_FILES, PROCESSING_FILES, GENERATING_EMBEDDINGS, STORING_VECTORS, RECONCILING_STALE_FILES, FINALIZING
+- Enables UI to show current operation
+- Better for debugging and monitoring
+- More informative than percentage alone
+- Consistent with milestone requirements
+
+### Counter Definitions
+**Decision:** Define clear semantics for each counter
+**Rationale:**
+- filesDiscovered: processable files after filtering
+- filesProcessed: successfully normalized/chunked/persisted files
+- chunksCreated: total chunks successfully produced
+- embeddingsGenerated: total vectors successfully generated
+- Consistent definitions prevent confusion
+- Accurate reporting of pipeline work
+- Enables meaningful analytics
+
+### Transaction Boundaries
+**Decision:** Use small database transactions for related updates only
+**Rationale:**
+- GitHub, Ollama, Qdrant cannot participate in PostgreSQL transactions
+- Wrap related database updates (e.g., RepositoryFile upsert + job progress)
+- Avoid long-running transactions across external services
+- Better performance and reliability
+- Consistent with distributed systems best practices
+- Prevents transaction timeouts
+
+### Memory Management
+**Decision:** Process files incrementally with streaming approach
+**Rationale:**
+- GitHub tree → file → normalize → chunk → embed → upsert
+- Never load entire repository into memory
+- Respect existing file size limits
+- Bounded memory usage regardless of repository size
+- Suitable for production workloads
+- Consistent with streaming pattern
+
+### Batch Operations
+**Decision:** Use existing batch embedding and Qdrant upsert functionality
+**Rationale:**
+- EmbeddingService already supports batch processing
+- QdrantVectorService already supports batch upsert
+- Configurable batch sizes for efficiency
+- Respects existing configuration
+- No need to reimplement batching
+- Leverages existing optimizations
+
+### No Distributed Concurrency
+**Decision:** Use simple single-worker model for Milestone 6B
+**Rationale:**
+- Existing Milestone 6A worker foundation sufficient
+- No need for distributed locks or complex coordination
+- Simple and reliable for MVP
+- Can be enhanced in later milestones if needed
+- Avoids premature optimization
+- Reduces complexity
+
+### Empty File Vector Deletion
+**Decision:** Delete existing vectors when empty file is re-indexed
+**Rationale:**
+- Empty files have no chunks or vectors
+- Stale vectors from previous indexing should be removed
+- Clean state after re-index
+- Consistent with stale vector reconciliation
+- Prevents misleading search results
+- Maintains data integrity
+
+### Failure Handling Strategy
+**Decision:** Fail entire job on non-retryable file failures
+**Rationale:**
+- Prevents silent partial indexes
+- Better to fail explicitly than produce incomplete results
+- Binary/oversized files are safely skipped (classified by file processing)
+- Other failures indicate real problems that should stop indexing
+- Maintains data integrity
+- Better user experience (explicit failure vs silent issues)
+
+### Manual Verification Script
+**Decision:** Create separate manual verification script for live end-to-end testing
+**Rationale:**
+- Validates integration with real GitHub, Ollama, Qdrant
+- Tests complete pipeline with real services
+- Separate from automated test suite to avoid dependencies
+- Confirms resource cleanup works correctly
+- Provides confidence in implementation
+- Can be run on-demand when services are available
+
+### Resource Cleanup in Manual Verification
+**Decision:** Properly disconnect all resources (Redis, Prisma) in manual verification
+**Rationale:**
+- Prevents hanging processes
+- Ensures clean exit with code 0
+- Avoids resource leaks
+- Important for reliable testing
+- Proper process lifecycle management
+- Prevents event loop issues
 
 ## Vector Storage Decisions
 

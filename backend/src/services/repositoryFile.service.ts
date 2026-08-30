@@ -59,6 +59,29 @@ export class RepositoryFileService {
     return repositoryFileRepository.updateChunkCount(id, chunkCount);
   }
 
+  async upsertRepositoryFile(data: {
+    repositoryId: string;
+    filePath: string;
+    fileName: string;
+    extension?: string;
+    language?: string;
+    fileSize: number;
+    sha: string;
+    chunkCount: number;
+  }): Promise<RepositoryFile> {
+    const existing = await repositoryFileRepository.findByFilePath(data.repositoryId, data.filePath);
+    if (!existing) return this.createRepositoryFile(data);
+    return repositoryFileRepository.update(existing.id, {
+      fileName: data.fileName,
+      extension: data.extension,
+      language: data.language,
+      fileSize: data.fileSize,
+      sha: data.sha,
+      chunkCount: data.chunkCount,
+      indexedAt: new Date(),
+    });
+  }
+
   async deleteRepositoryFile(id: string): Promise<RepositoryFile> {
     return repositoryFileRepository.delete(id);
   }

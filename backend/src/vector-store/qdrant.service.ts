@@ -343,6 +343,26 @@ export class QdrantVectorService {
     }
   }
 
+  async deleteFileVectorsExceptSha(repositoryFileId: string, currentFileSha: string): Promise<VectorDeletionResult> {
+    try {
+      const client = this.getClient();
+      const result = await client.delete(this.config.collectionName, {
+        filter: {
+          must: [{ key: 'repositoryFileId', match: { value: repositoryFileId } }],
+          must_not: [{ key: 'fileSha', match: { value: currentFileSha } }],
+        },
+      });
+      return {
+        deletedCount: result.status === 'completed' || result.status === 'acknowledged' ? -1 : 0,
+        collectionName: this.config.collectionName,
+      };
+    } catch (error) {
+      throw new QdrantDeleteError(
+        `Failed to reconcile vectors for file: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
   async getCollectionConfig(): Promise<CollectionConfig> {
     try {
       const client = this.getClient();
