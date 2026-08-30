@@ -40,6 +40,7 @@ async function main(): Promise<void> {
     await redis.disconnect();
     await prisma.$disconnect();
     console.log('Cleanup complete');
+    process.exit(0);
   }
 }
 

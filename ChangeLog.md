@@ -67,7 +67,8 @@ This file tracks all changes made to the GitHub Knowledge Assistant project by t
 
 ### Bug Fixes
 - **Issue:** Manual verification script hanging after successful completion
-  - **Fix:** Added proper resource cleanup with `prisma.$disconnect()` and `redis.disconnect()`
+  - **Fix:** Added `process.exit(0)` as workaround after proper cleanup calls
+  - **Technical debt:** Node.js event loop remains alive after `redis.disconnect()` and `prisma.$disconnect()`; root cause investigation deferred to future cleanup
 - **Issue:** TypeScript error for undici import in manual verification
   - **Fix:** Removed unnecessary `node:undici` import, simplified cleanup
 
