@@ -2,6 +2,45 @@
 
 This file documents the rationale behind key technical decisions made during the development of the GitHub Knowledge Assistant.
 
+## Milestone 7A: AI Provider Abstraction & Ollama Text Generation
+
+### AIProvider Interface Mirrors EmbeddingProvider Pattern
+**Decision:** Create an `AIProvider` interface and `AIService` that mirror the `EmbeddingProvider`/`EmbeddingService` pattern from Milestone 5A.
+
+**Rationale:** The embedding layer already proved this pattern works well: a thin service owns validation and config, a provider interface abstracts the HTTP implementation, and a concrete class implements the interface. Applying the same pattern to generation means: (a) `AIService` never imports Ollama types, (b) swapping providers in future (OpenAI, Anthropic, local alternatives) requires only implementing `AIProvider` without touching `AIService`, (c) tests mock `AIProvider` rather than fetch for service-level tests, keeping test scope focused.
+
+### Embedding Model and Generation Model Are Completely Separate
+**Decision:** `OllamaAIProvider` uses `config.ai.ollama.llmModel` (`OLLAMA_LLM_MODEL`), not `config.ai.ollama.embeddingModel` (`OLLAMA_EMBEDDING_MODEL`). They hit different endpoints (`/api/generate` vs `/api/embed`) and use different models.
+
+**Rationale:** Mixing embedding and generation into a single Ollama provider would create a false coupling. The embedding model (`nomic-embed-text`) is optimised for vector similarity; it is not suitable for instruction-following generation. The generation model (`llama3` by default) is optimised for text completion. They can be different models, different versions, or even running on different Ollama instances in future deployments.
+
+### `stream: false` for Synchronous Generation
+**Decision:** The Ollama provider sets `stream: false` in the generate request body, returning the full response as a single JSON object.
+
+**Rationale:** 7A does not include streaming support (that belongs to 7B or later). Synchronous responses are simpler to validate, easier to test with mocked fetch, and do not require SSE or chunked-transfer handling. When streaming is needed in future, it can be added as a separate method or provider variant.
+
+### Error Hierarchy Extends AppError with Object.setPrototypeOf
+**Decision:** All AI errors extend `AIError → AppError`, and every constructor calls `Object.setPrototypeOf(this, XxxError.prototype)`.
+
+**Rationale:** TypeScript compiles ES6 `class extends` to ES5 prototype chains. Without the `setPrototypeOf` call, `instanceof` checks fail when targeting ES5 (which this project does). The embedding layer already demonstrates this pattern working correctly. Consistent error inheritance means the Express error middleware can handle AI errors by status code without special-casing each one.
+
+### AIService Owns Validation; Provider Does Not
+**Decision:** Prompt validation (empty, whitespace, length) lives in `AIService.validateRequest()`, not in `OllamaAIProvider`.
+
+**Rationale:** Providers are responsible for HTTP communication and response mapping. Application-level input validation belongs at the service layer, which is the stable public API. This prevents duplicate validation if multiple providers are added — each provider does not need to re-implement identical guards.
+
+### Default MaxPromptLength Is 16,384 Characters
+**Decision:** `maxPromptLength` defaults to 16,384 characters (~4K tokens at typical English ratios).
+
+**Rationale:** This is a conservative default that avoids sending excessively large requests to Ollama while still supporting realistic question-answering prompts. It can be overridden via `AIService` constructor options. It is not stored in the global config because the limit is a service-level concern and different callers may want different limits (e.g., the RAG layer will construct much longer prompts in 7B).
+
+### `AbortController` Timeout Matches Embedding Provider Pattern
+**Decision:** `OllamaAIProvider` uses an `AbortController` with `setTimeout` to enforce `this.timeout`, mapping `AbortError` to `AITimeoutError`.
+
+**Rationale:** The embedding provider already uses this pattern. Generation requests can be significantly slower than embedding requests (seconds to minutes for large responses), making timeout enforcement even more important. Using the same pattern keeps the codebase consistent and makes the behaviour easier to predict during debugging.
+
+---
+
 ## Milestone 6A: Background Indexing Foundation
 
 ### Redis Coordinates; PostgreSQL Persists

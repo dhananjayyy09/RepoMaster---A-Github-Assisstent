@@ -2,6 +2,136 @@
 
 This file documents the flow and interactions between different parts of the GitHub Knowledge Assistant codebase.
 
+## Milestone 7A: AI Text Generation Flow
+
+### Module Structure
+
+```
+backend/src/ai/
+├── ai.types.ts          ← GenerationRequest, GenerationResponse, GenerationOptions,
+│                           GenerationConfig, AIProvider interface, AIProviderConfig
+├── ai.errors.ts         ← AIError hierarchy (7 classes)
+├── ollama.ai.provider.ts ← OllamaAIProvider implements AIProvider
+├── ai.service.ts        ← AIService (validation + delegation)
+└── index.ts             ← Barrel export
+```
+
+### Generation Request Flow
+
+```
+Caller (future RAG / API layer)
+    │
+    │  GenerationRequest { prompt, options? }
+    ▼
+AIService.generate(request)
+    │
+    ├── validateRequest(request)
+    │       ├── typeof prompt !== 'string'  → AIInputError (400)
+    │       ├── prompt.trim() === ''        → AIInputError (400)
+    │       └── prompt.length > maxPrompt  → AIInputError (400)
+    │
+    │  (valid request passed through unchanged)
+    ▼
+AIProvider.generate(request)      ← interface boundary
+    │
+    ▼
+OllamaAIProvider.generate(request)
+    │
+    ├── Build OllamaGenerateRequest
+    │       { model, prompt, stream: false, options? }
+    │
+    ├── fetchWithTimeout(url, init)
+    │       ├── AbortController set to this.timeout ms
+    │       ├── fetch POST → http://localhost:11434/api/generate
+    │       │
+    │       ├── AbortError           → AITimeoutError (504)
+    │       └── network error        → AIProviderError (502)
+    │
+    ├── HTTP error handling
+    │       ├── 404                  → AIModelUnavailableError (503)
+    │       └── other non-2xx        → AIGenerationError (502)
+    │
+    ├── response.json()
+    │       └── SyntaxError          → AIInvalidResponseError (502)
+    │
+    ├── Validate data.response
+    │       └── missing / empty      → AIInvalidResponseError (502)
+    │
+    └── Return GenerationResponse
+            { text, model, promptTokens?, completionTokens?, totalTokens?, finishReason? }
+```
+
+### GenerationOptions Mapping
+
+```
+GenerationOptions (application-level)   →   Ollama options object
+─────────────────────────────────────────────────────────────────
+temperature                             →   temperature
+maxTokens                               →   num_predict
+topP                                    →   top_p
+topK                                    →   top_k
+[any other key]                         →   passed through as-is
+```
+
+### Error Propagation
+
+```
+OllamaAIProvider throws AI*Error
+    │
+    ▼
+AIService.generate()  ← does NOT catch; errors propagate unchanged
+    │
+    ▼
+Caller receives AI*Error with correct statusCode and instanceof chain
+```
+
+### Embedding vs Generation — Separation of Concerns
+
+```
+Embedding flow (existing, Milestone 5A):
+    EmbeddingService → OllamaEmbeddingProvider → POST /api/embed → nomic-embed-text
+
+Generation flow (new, Milestone 7A):
+    AIService → OllamaAIProvider → POST /api/generate → llama3 (or OLLAMA_LLM_MODEL)
+```
+
+These two flows are completely independent. No shared provider class. No shared HTTP client. No shared model. The generation flow does not touch embedding configuration and vice versa.
+
+### Configuration Sources
+
+```
+OLLAMA_BASE_URL      → config.ai.ollama.baseUrl
+OLLAMA_LLM_MODEL     → config.ai.ollama.llmModel      ← generation model only
+OLLAMA_TIMEOUT_MS    → config.ai.ollama.timeoutMs
+AI_PROVIDER          → config.ai.provider              ← future: openai / anthropic
+```
+
+### AIService Config Defaults (not in global config, owned by service)
+
+```
+timeoutMs:        30,000 ms
+maxPromptLength:  16,384 characters (~4K tokens)
+maxResponseLength: 32,768 characters
+```
+
+### Future Integration Point (Milestone 7B)
+
+```
+RAG Context Builder
+    │
+    │  GenerationRequest { prompt: <system + context + question> }
+    ▼
+AIService.generate()
+    │
+    ▼
+OllamaAIProvider  (or future OpenAI / Anthropic provider)
+    │
+    ▼
+GenerationResponse { text, model, tokens }
+```
+
+---
+
 ## Current System Flow (Milestones 1–4B)
 
 ### Frontend Application Flow

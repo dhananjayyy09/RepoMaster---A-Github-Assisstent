@@ -2,6 +2,70 @@
 
 This file tracks all changes made to the GitHub Knowledge Assistant project by the AI assistant.
 
+## [2026-08-31] Milestone 7A: AI Provider Abstraction & Ollama Text Generation
+
+### AI Module Creation
+
+- **File:** `backend/src/ai/ai.types.ts`
+  - Already existed (untracked) from a prior agent pass; retained unchanged
+  - Defines `GenerationRequest`, `GenerationResponse`, `GenerationOptions`, `GenerationConfig`, `AIProvider` interface, `AIProviderConfig`
+
+- **File:** `backend/src/ai/ai.errors.ts`
+  - Created AI error hierarchy extending `AppError`
+  - `AIError` (500) — base class
+  - `AIProviderError` (502) — general provider failure
+  - `AIModelUnavailableError` (503) — model not loaded on provider
+  - `AIInvalidResponseError` (502) — malformed or missing response field
+  - `AITimeoutError` (504) — request exceeded configured timeout
+  - `AIInputError` (400) — empty, whitespace-only, or over-length prompt
+  - `AIGenerationError` (502) — generation-level failure from provider
+  - All classes use `Object.setPrototypeOf` for correct `instanceof` behaviour
+
+- **File:** `backend/src/ai/ollama.ai.provider.ts`
+  - Implements `AIProvider` interface for Ollama text generation
+  - POSTs to `/api/generate` with `stream: false` for synchronous responses
+  - Configurable via `baseUrl`, `model`, `timeout` (defaults from `config.ai.ollama`)
+  - Maps `GenerationOptions` to Ollama's `options` object (`maxTokens → num_predict`, `topP → top_p`, `topK → top_k`)
+  - Extracts `prompt_eval_count` and `eval_count` token counts from response
+  - `AbortController`-based timeout with `AITimeoutError` mapping
+  - HTTP 404 → `AIModelUnavailableError`; other non-ok → `AIGenerationError`
+  - Bad JSON → `AIInvalidResponseError`; empty/missing response field → `AIInvalidResponseError`
+  - Network error → `AIProviderError`
+  - Accessors: `getModel()`, `getBaseUrl()`, `getTimeout()`
+  - **Does NOT use the embedding model** (`nomic-embed-text`); generation model is configured independently via `OLLAMA_LLM_MODEL`
+
+- **File:** `backend/src/ai/ai.service.ts`
+  - Provider-independent AI service
+  - Validates prompt: non-string → `AIInputError`; empty/whitespace → `AIInputError`; over `maxPromptLength` → `AIInputError`
+  - Delegates to injected `AIProvider`; has no knowledge of Ollama internals
+  - Default config: `timeoutMs=30000`, `maxPromptLength=16384`, `maxResponseLength=32768`
+  - Accessors: `getProvider()`, `setProvider()`, `getConfig()`, `updateConfig()`
+
+- **File:** `backend/src/ai/index.ts`
+  - Barrel export for the AI module (types, errors, provider, service)
+
+### Testing
+
+- **File:** `backend/src/test/ai.test.ts`
+  - 32 mocked tests; no live Ollama required
+  - 9 describe blocks: error hierarchy, Ollama success, HTTP errors, connectivity failures, config accessors, service validation, service delegation, error propagation, service config
+  - All existing tests continue to pass (366/366 total)
+
+### Manual Verification
+
+- **File:** `backend/src/test/manual-ai-verification.ts`
+  - Live verification script: checks Ollama availability, generation model, sends a real generation request, validates non-empty response, exits 0
+  - Separate from existing embedding verification
+  - **Live result:** Model `llama3.2:1b`, response `"Two plus two equals four."`, 39 prompt tokens, 7 completion tokens, 46 total tokens, finish reason `stop`, 433ms (warm)
+  - **Known limitation:** `tsx` on Windows leaves internal libuv handles open; `process.exit(0)` triggers a `UV_HANDLE_CLOSING` assertion from `src\win\async.c` after the success message is printed. This is a cosmetic `tsx` runtime issue on Windows — identical to the issue documented in Milestone 6B. The generation itself succeeds and the PASSED message is always printed before exit.
+
+### Package.json
+
+- **File:** `backend/package.json`
+  - Added `"verify:ai": "tsx src/test/manual-ai-verification.ts"` script
+
+---
+
 ## [2026-08-31] Milestone 6B: End-to-End Indexing Pipeline
 
 ### Indexing Pipeline Implementation
