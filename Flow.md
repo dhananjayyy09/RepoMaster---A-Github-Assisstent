@@ -2,6 +2,74 @@
 
 This file documents the flow and interactions between different parts of the GitHub Knowledge Assistant codebase.
 
+## Milestone 8A: Backend API Foundation
+
+### API Architecture Flow
+
+```
+Client (Frontend / cURL)
+    │
+    ▼
+Express App (src/app.ts)
+    │
+    ├── Express JSON parser
+    ├── CORS Middleware
+    │
+    ▼
+apiRouter (src/api/index.ts) mounted at `/api`
+    │
+    ├── /repositories → repositoriesRouter
+    └── /indexing    → indexingRouter
+```
+
+### Request Lifecycle (Example: POST /api/repositories)
+
+```
+POST /api/repositories { "githubUrl": "..." }
+    │
+    ▼
+Zod Validation Middleware (validateBody(repositoryUrlSchema))
+    │
+    ├── Invalid? → Throws ValidationError (caught by Error Handler)
+    └── Valid?   → req.body is strongly typed
+    │
+    ▼
+RepositoriesController.createRepository
+    │
+    ├── parseGitHubRepositoryUrl(req.body.githubUrl)
+    │       └── Invalid? → Throws ValidationError
+    │
+    ├── Resolves dummy userId (until Auth is built)
+    │
+    ├── Calls RepositoryService.createRepository(owner, name, userId, url)
+    │
+    ▼
+Returns ApiResponse
+{
+    "data": { "id": "...", "owner": "...", "name": "..." }
+}
+```
+
+### Centralized Error Handling Flow
+
+```
+Controller throws AppError subclass (e.g. GitHubRepositoryNotFoundError)
+    │
+    ▼
+Express ErrorHandler Middleware (src/middleware/errorHandler.ts)
+    │
+    ├── If err instanceof AppError
+    │       ├── Check status code (e.g. 404)
+    │       └── Format: { "error": { "message": "...", "code": 404 } }
+    │
+    └── If err is standard Error
+            ├── Status code 500
+            └── Format: { "error": { "message": "Internal server error" } }
+    │
+    ▼
+Sends JSON response to Client
+```
+
 ## Milestone 7A: AI Text Generation Flow
 
 ### Module Structure

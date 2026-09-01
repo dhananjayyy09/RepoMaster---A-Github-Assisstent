@@ -2,6 +2,40 @@
 
 This file tracks all changes made to the GitHub Knowledge Assistant project by the AI assistant.
 
+## [2026-09-01] Milestone 8A: Backend API Foundation
+
+### API Architecture & Middlewares
+- **File:** `backend/src/api/types/response.types.ts`
+  - Created standardized `ApiResponse<T>`, `ApiErrorResponse`, `ApiPaginatedResponse<T>` interfaces.
+- **File:** `backend/src/middleware/validate.ts`
+  - Implemented typed Zod validation middleware for `req.body`, `req.query`, and `req.params`.
+- **File:** `backend/src/middleware/errorHandler.ts`
+  - Created a central Express error handler mapping `AppError` subclasses to correct HTTP status codes and JSON formatting.
+- **File:** `backend/src/app.ts`
+  - Registered Express JSON parser, CORS, standard API routers, and global error handling.
+
+### API Routes & Controllers
+- **File:** `backend/src/api/repositories/repositories.controller.ts`
+  - Implemented `createRepository`, `listRepositories`, `getRepository`, and `deleteRepository` using existing `RepositoryService`.
+- **File:** `backend/src/api/repositories/repositories.validators.ts`
+  - Defined Zod schemas for repository URLs.
+- **File:** `backend/src/api/repositories/repositories.routes.ts`
+  - Defined RESTful routes: POST `/`, GET `/`, GET `/:id`, DELETE `/:id`.
+- **File:** `backend/src/api/indexing/indexing.controller.ts`
+  - Implemented `startIndexing`, `getIndexingStatus` using existing `IndexingJobService`.
+- **File:** `backend/src/api/indexing/indexing.validators.ts`
+  - Defined Zod schemas for indexing payloads (e.g., repositoryId, maxFiles).
+- **File:** `backend/src/api/indexing/indexing.routes.ts`
+  - Defined RESTful routes: POST `/`, GET `/:jobId`.
+- **File:** `backend/src/api/index.ts`
+  - Mounted the core apiRouter onto `/api`.
+
+### Testing & Verification
+- **File:** `backend/src/test/api.test.ts`
+  - Added unit tests for repositories and indexing controllers using mocked services and `supertest`.
+- **File:** `backend/src/test/manual-api-verification.ts`
+  - Script for full e2e API sanity checks.
+
 ## [2026-09-01] Milestone 7B: RAG Retrieval, Context Building & Orchestration
 
 ### API Boundary

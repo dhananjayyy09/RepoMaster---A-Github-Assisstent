@@ -2,6 +2,24 @@
 
 This file documents the rationale behind key technical decisions made during the development of the GitHub Knowledge Assistant.
 
+## Milestone 8A: Backend API Foundation
+
+### Express Controllers vs Next.js Route Handlers
+**Decision:** Implement the API using Express controllers rather than Next.js App Router API endpoints.
+**Rationale:** The project separates the backend (Express + Prisma + Node) from the frontend. This decoupling ensures the heavy indexing and processing remain in a dedicated worker environment and allows for easier scaling. Express provides mature middleware, routing, and centralized error handling patterns that we can tightly control.
+
+### Zod for API Validation
+**Decision:** Create a centralized `validateRequest` middleware using Zod, splitting validation into `req.body`, `req.query`, and `req.params`.
+**Rationale:** We are already using Zod for configuration validation and GitHub URL parsing. By moving Zod to the Express middleware layer, we guarantee type safety and payload correctness before requests even reach the controllers. Zod issues map elegantly into `ValidationError`s for consistent 400 responses.
+
+### AppError as the Source of Truth for Status Codes
+**Decision:** The central Express error handler relies on `AppError` subclasses to determine HTTP status codes.
+**Rationale:** This removes the burden of HTTP response formatting from the services. The services simply throw domain errors (e.g., `GitHubRepositoryNotFoundError`, `ValidationError`, `IndexingJobNotFoundError`), and the middleware automatically sets the correct status code (404, 400, etc.) and formats the JSON structure.
+
+### Type Casting in Express Params
+**Decision:** Cast `req.params` (e.g., `req.params as { id: string }`) inside controllers after Zod validation.
+**Rationale:** Express types `req.params` values as `string | string[]` or `any` depending on the route definition, but our Zod validators enforce that they are standard strings. A simple type cast after validation bridges the gap between Zod's runtime guarantee and TypeScript's compile-time requirement for service calls without heavy generic wizardry on the Request type.
+
 ## Milestone 7A: AI Provider Abstraction & Ollama Text Generation
 
 ### AIProvider Interface Mirrors EmbeddingProvider Pattern

@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { config } from './config';
 import { errorHandler } from './middleware/errorHandler';
+import apiRouter from './api/routes';
 
 const createApp = (): Application => {
   const app = express();
@@ -29,6 +30,9 @@ const createApp = (): Application => {
       environment: config.env,
     });
   });
+
+  // Mount API Router
+  app.use('/api', apiRouter);
 
   // Error handling
   app.use(errorHandler);

@@ -8,11 +8,18 @@ export const errorHandler = (
   next: NextFunction
 ) => {
   if (err instanceof AppError) {
+    const errorDetails: any = {
+      code: err.statusCode,
+      message: err.message,
+    };
+    
+    if ((err as any).details) {
+      errorDetails.details = (err as any).details;
+    }
+
     return res.status(err.statusCode).json({
-      error: {
-        message: err.message,
-        statusCode: err.statusCode,
-      },
+      success: false,
+      error: errorDetails,
     });
   }
 
@@ -20,9 +27,10 @@ export const errorHandler = (
   
   const internalError = new InternalServerError();
   return res.status(internalError.statusCode).json({
+    success: false,
     error: {
+      code: internalError.statusCode,
       message: internalError.message,
-      statusCode: internalError.statusCode,
     },
   });
 };
