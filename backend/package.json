@@ -15,7 +15,8 @@
     "test:db": "tsx src/test/database.test.ts",
     "verify:redis-queue": "tsx src/test/manual-redis-queue-verification.ts",
     "verify:indexing": "tsx src/test/manual-indexing-verification.ts",
-    "verify:ai": "tsx src/test/manual-ai-verification.ts"
+    "verify:ai": "tsx src/test/manual-ai-verification.ts",
+    "verify:rag": "tsx src/test/manual-rag-verification.ts"
   },
   "keywords": [],
   "author": "",

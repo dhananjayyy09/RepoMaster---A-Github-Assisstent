@@ -53,6 +53,11 @@ const envSchema = z.object({
   // Embedding
   OLLAMA_TIMEOUT_MS: z.string().default('30000'), // 30 seconds default
   EMBEDDING_BATCH_SIZE: z.string().default('10'), // 10 texts per batch
+  
+  // RAG
+  RAG_MAX_RETRIEVED_CHUNKS: z.string().default('20'),
+  RAG_SIMILARITY_THRESHOLD: z.string().default('0.7'),
+  RAG_MAX_CONTEXT_CHUNKS: z.string().default('10'),
 });
 
 export function parseEnvironment(input: NodeJS.ProcessEnv = process.env) {
@@ -126,6 +131,12 @@ export const config = {
   
   embedding: {
     batchSize: parseInt(env.EMBEDDING_BATCH_SIZE, 10),
+  },
+  
+  rag: {
+    maxRetrievedChunks: parseInt(env.RAG_MAX_RETRIEVED_CHUNKS, 10),
+    similarityThreshold: parseFloat(env.RAG_SIMILARITY_THRESHOLD),
+    maxContextChunks: parseInt(env.RAG_MAX_CONTEXT_CHUNKS, 10),
   },
 };
 

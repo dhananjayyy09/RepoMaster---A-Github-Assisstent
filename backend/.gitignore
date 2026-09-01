@@ -43,3 +43,7 @@ coverage/
 
 # Cache
 .cache/
+
+
+# Antigravity Agents Configuration
+.agents/

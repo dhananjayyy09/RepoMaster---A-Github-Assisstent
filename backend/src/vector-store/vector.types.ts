@@ -26,6 +26,7 @@ export interface RepositoryChunkPayload {
   repositoryOwner: string;
   repositoryName: string;
   chunkSize: number;
+  content: string;
   [key: string]: unknown;
 }
 
@@ -36,6 +37,19 @@ export interface VectorStorageInput {
   repositoryName: string;
   chunk: CodeChunk;
   embedding: EmbeddingResult;
+}
+
+export interface VectorSearchInput {
+  vector: number[];
+  repositoryId: string;
+  limit: number;
+  scoreThreshold?: number;
+}
+
+export interface VectorSearchResult {
+  pointId: string;
+  score: number;
+  payload: RepositoryChunkPayload;
 }
 
 export interface VectorStorageResult {

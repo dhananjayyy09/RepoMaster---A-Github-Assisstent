@@ -127,7 +127,7 @@ describe('Vector Store Utilities', () => {
         fileSha: 'abc123',
         repositoryOwner: 'owner',
         repositoryName: 'repo',
-        chunkSize: 100,
+        chunkSize: 100, content: 'mock',
       };
       expect(() => validatePayload(payload)).not.toThrow();
     });
@@ -147,7 +147,7 @@ describe('Vector Store Utilities', () => {
         fileSha: 'abc123',
         repositoryOwner: 'owner',
         repositoryName: 'repo',
-        chunkSize: 100,
+        chunkSize: 100, content: 'mock',
       };
       expect(() => validatePayload(payload)).toThrow(VectorPayloadError);
     });
@@ -167,7 +167,7 @@ describe('Vector Store Utilities', () => {
         fileSha: 'abc123',
         repositoryOwner: 'owner',
         repositoryName: 'repo',
-        chunkSize: 100,
+        chunkSize: 100, content: 'mock',
       };
       expect(() => validatePayload(payload)).toThrow(VectorPayloadError);
     });
@@ -187,7 +187,7 @@ describe('Vector Store Utilities', () => {
         fileSha: 'abc123',
         repositoryOwner: 'owner',
         repositoryName: 'repo',
-        chunkSize: 100,
+        chunkSize: 100, content: 'mock',
       };
       expect(() => validatePayload(payload)).toThrow(VectorPayloadError);
     });

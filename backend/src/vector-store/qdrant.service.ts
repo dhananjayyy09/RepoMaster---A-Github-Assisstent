@@ -11,6 +11,8 @@ import {
   VectorStorageResult,
   BatchVectorStorageResult,
   VectorDeletionResult,
+  VectorSearchInput,
+  VectorSearchResult,
   CollectionConfig,
   VectorStorageConfig,
   RepositoryChunkPayload,
@@ -141,6 +143,7 @@ export class QdrantVectorService {
       repositoryOwner,
       repositoryName,
       chunkSize: chunk.size,
+      content: chunk.content,
     };
   }
 
@@ -175,6 +178,7 @@ export class QdrantVectorService {
         repositoryOwner: payload.repositoryOwner,
         repositoryName: payload.repositoryName,
         chunkSize: payload.chunkSize,
+        content: payload.content,
       };
 
       const client = this.getClient();
@@ -202,6 +206,37 @@ export class QdrantVectorService {
       }
       throw new QdrantUpsertError(
         `Failed to upsert vector: ${getQdrantErrorMessage(error)}`
+      );
+    }
+  }
+
+  async searchVectors(input: VectorSearchInput): Promise<VectorSearchResult[]> {
+    try {
+      const client = this.getClient();
+      const results = await client.query(this.config.collectionName, {
+        query: input.vector,
+        limit: input.limit,
+        score_threshold: input.scoreThreshold,
+        filter: {
+          must: [
+            {
+              key: 'repositoryId',
+              match: { value: input.repositoryId },
+            },
+          ],
+        },
+        with_payload: true,
+      });
+
+      const points = (results as any).points || (results as any);
+      return points.map((result: any) => ({
+        pointId: String(result.id),
+        score: result.score,
+        payload: (result.payload || {}) as unknown as RepositoryChunkPayload,
+      }));
+    } catch (error) {
+      throw new QdrantCollectionError(
+        `Failed to search vectors: ${getQdrantErrorMessage(error)}`
       );
     }
   }

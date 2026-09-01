@@ -2,6 +2,39 @@
 
 This file tracks all changes made to the GitHub Knowledge Assistant project by the AI assistant.
 
+## [2026-09-01] Milestone 7B: RAG Retrieval, Context Building & Orchestration
+
+### API Boundary
+- No public API endpoints created in this Milestone 8 (Planned)
+- Public REST API endpoints (`/api/repositories`, `/api/chat`, etc.)
+
+### RAG Pipeline Implementation
+- **File:** `backend/src/rag/rag.types.ts`
+  - Created application-level types decoupled from SDK specifics (e.g. `RagRequest`, `RetrievedChunk`, `SourceCitation`, `RagContext`, `RagResponse`).
+- **File:** `backend/src/rag/rag.errors.ts`
+  - Created specific error classes (`RagInputError`, `RagRetrievalError`, `RagContextError`, `RagGenerationError`) extending `AppError`.
+- **File:** `backend/src/rag/retrieval.service.ts`
+  - Implemented semantic search wrapping Qdrant queries. Enforces repository isolation via filtering, applies similarity thresholds, and maps to application-level results.
+- **File:** `backend/src/rag/context.builder.ts`
+  - Added logic to sort retrieved chunks by score, deduplicate, limit to `maxContextChunks`, and format linearly for prompt generation.
+- **File:** `backend/src/rag/prompt.builder.ts`
+  - Added instruction-based prompt structuring to keep generation focused on repository context and prevent unsupported answers.
+- **File:** `backend/src/rag/rag.service.ts`
+  - Implemented orchestration service that chains Embedding, Retrieval, Context, Prompt, and Generation. Handles insufficient context cleanly.
+
+### Configuration & Vector Store Updates
+- **File:** `backend/src/config/index.ts`
+  - Added configuration parameters for `RAG_MAX_RETRIEVED_CHUNKS`, `RAG_SIMILARITY_THRESHOLD`, and `RAG_MAX_CONTEXT_CHUNKS`.
+- **File:** `backend/src/vector-store/qdrant.service.ts`
+  - Added `searchVectors` capability to query the Qdrant database.
+  - Added `content` to `RepositoryChunkPayload` and the indexing operations so text is directly retrievable during vector search.
+
+### Verification
+- **File:** `backend/src/test/rag.test.ts`
+  - Added mocked unit tests for full RAG workflow orchestration and intermediate components.
+- **File:** `backend/src/test/manual-rag-verification.ts`
+  - Created end-to-end interactive script validating the embedding, search, context assembly, and AI text generation against real Qdrant and Ollama instances.
+
 ## [2026-08-31] Milestone 7A: AI Provider Abstraction & Ollama Text Generation
 
 ### AI Module Creation
@@ -703,10 +736,6 @@ This file tracks all changes made to the GitHub Knowledge Assistant project by t
 - No Prisma calls, no repository/file record creation
 - Clean separation for future orchestration with file processing and chunking
 
-### API Boundary
-- No public API endpoints created in this milestone
-- Service-level testing sufficient for current requirements
-- API endpoints deferred to Milestone 8
 
 ## [2026-08-22] Milestone 3A: GitHub Integration Foundation
 

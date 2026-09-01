@@ -114,20 +114,34 @@ maxPromptLength:  16,384 characters (~4K tokens)
 maxResponseLength: 32,768 characters
 ```
 
-### Future Integration Point (Milestone 7B)
+### Milestone 7B: RAG Pipeline Orchestration Flow
 
-```
-RAG Context Builder
-    │
-    │  GenerationRequest { prompt: <system + context + question> }
-    ▼
-AIService.generate()
+```text
+User Question (RagRequest)
     │
     ▼
-OllamaAIProvider  (or future OpenAI / Anthropic provider)
+RagService
     │
+    ├─► 1. EmbeddingService.embedText(question)
+    │       (Returns vector [0.1, 0.2, ...])
+    │
+    ├─► 2. RetrievalService.search(vector, repositoryId)
+    │       (Filters by repo ID, scores chunks from Qdrant, applies similarity threshold)
+    │
+    ├─► 3. Early Exit (if no chunks found)
+    │       (Returns "Insufficient context" without calling LLM)
+    │
+    ├─► 4. ContextBuilder.build(RetrievedChunk[])
+    │       (Sorts, deduplicates, truncates up to RAG_MAX_CONTEXT_CHUNKS, outputs formatted string)
+    │
+    ├─► 5. PromptBuilder.build(question, contextString)
+    │       (Assembles prompt with strict guidelines to only use provided context)
+    │
+    └─► 6. AIService.generate({ prompt })
+            (Calls provider, returns finalized answer)
+            
     ▼
-GenerationResponse { text, model, tokens }
+RagResponse { answer: string, sources: SourceCitation[] }
 ```
 
 ---

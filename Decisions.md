@@ -1384,7 +1384,18 @@ This file documents the rationale behind key technical decisions made during the
 
 ---
 
-## Template for Future Decisions
+## Milestone 7B: RAG Orchestration
+
+**Decision**: Store chunk text (`content`) directly in the Qdrant vector payload.
+**Rationale**: This avoids an extra `N` round-trips to PostgreSQL (`RepositoryFile` / chunks if we had a Chunk table) to reconstruct context, vastly improving retrieval performance. The chunk contents are short (e.g. 100 lines), making them suitable for Qdrant payload storage.
+
+**Decision**: Two-stage limitation: Retrieval Limit (`RAG_MAX_RETRIEVED_CHUNKS`) vs Context Limit (`RAG_MAX_CONTEXT_CHUNKS`).
+**Rationale**: We fetch more chunks than we need during the search stage to ensure we can robustly filter and deduplicate them in memory before truncating the final context to respect LLM token context limits.
+
+**Decision**: Pre-prompt "Insufficient Context" Short-circuiting.
+**Rationale**: If the Qdrant search returns zero relevant results above the threshold, the `RAGService` immediately returns a static "could not find relevant code" message. This prevents unnecessary expensive calls to the AI generation provider when it would simply reply that it doesn't know.
+
+### Future Decisions
 
 ### [Decision Name]
 **Decision:** [Choice made]
