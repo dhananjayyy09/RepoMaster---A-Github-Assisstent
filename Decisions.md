@@ -2,6 +2,20 @@
 
 This file documents the rationale behind key technical decisions made during the development of the GitHub Knowledge Assistant.
 
+## Milestone 8B: RAG + Chat API Integration
+
+### Thin Controller Layer with Existing RagService Orchestration
+**Decision:** The chat controller calls `RagService.askQuestion()` directly without embedding or query re-implementation in the controller.
+**Rationale:** Milestone 7B already established the end-to-end RAG pipeline (`EmbeddingService` → `RetrievalService` → `ContextBuilder` → `PromptBuilder` → `AIService`). The API controller remains strictly focused on HTTP concerns (request parsing, authorization/user resolution, and response mapping), preserving architectural boundaries.
+
+### Message Persistence Ordering (User Message First)
+**Decision:** The user's question message is persisted to the database as a `Message` with `role: USER` *before* executing the RAG query against Ollama. The assistant response is persisted as `role: ASSISTANT` *after* generation completes.
+**Rationale:** Persisting the user message first ensures the prompt is durable in conversation history. If downstream AI generation fails with an error (e.g., timeout or provider unreachable), the user prompt is preserved and internal provider failure stack traces are never saved as artificial assistant messages.
+
+### Source Citation Retention in Message Metadata
+**Decision:** Citation sources returned by `RagService` (`filePath`, `language`, `startLine`, `endLine`, `score`) are attached to the persisted assistant message's JSON `sources` field and included in the API response.
+**Rationale:** Storing citations in the `Message.sources` JSON column allows full fidelity when rendering previous chat history in future frontend sessions, without having to re-retrieve vector matches from Qdrant.
+
 ## Milestone 8A: Backend API Foundation
 
 ### Express Controllers vs Next.js Route Handlers

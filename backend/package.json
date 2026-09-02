@@ -17,7 +17,8 @@
     "verify:indexing": "tsx src/test/manual-indexing-verification.ts",
     "verify:ai": "tsx src/test/manual-ai-verification.ts",
     "verify:rag": "tsx src/test/manual-rag-verification.ts",
-    "verify:api": "tsx src/test/manual-api-verification.ts"
+    "verify:api": "tsx src/test/manual-api-verification.ts",
+    "verify:chat-api": "tsx src/test/manual-chat-api-verification.ts"
   },
   "keywords": [],
   "author": "",

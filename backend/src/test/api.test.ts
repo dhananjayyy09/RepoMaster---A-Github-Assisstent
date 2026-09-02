@@ -3,11 +3,13 @@ import { Application } from 'express';
 import createApp from '../app';
 import { repositoryService } from '../services/repository.service';
 import { indexingJobService } from '../services/indexingJob.service';
+import { userService } from '../services/user.service';
 import { JobStatus, IndexingStatus } from '@prisma/client';
 
 // Mock the services
 jest.mock('../services/repository.service');
 jest.mock('../services/indexingJob.service');
+jest.mock('../services/user.service');
 // Mock GitHub utils to avoid live calls
 jest.mock('../github/github.utils', () => ({
   parseGitHubRepositoryUrl: jest.fn().mockImplementation((url: string) => {
@@ -21,6 +23,13 @@ describe('API Foundation (Milestone 8A)', () => {
 
   beforeAll(() => {
     app = createApp();
+  });
+
+  beforeEach(() => {
+    (userService.getOrCreateUser as jest.Mock).mockResolvedValue({
+      id: 'user-123',
+      email: 'dev@repomaster.local',
+    });
   });
 
   afterEach(() => {

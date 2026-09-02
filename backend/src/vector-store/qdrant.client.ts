@@ -6,10 +6,11 @@ export class QdrantClientWrapper {
   private client: QdrantClient;
   private url: string;
 
-  constructor(url: string, timeout?: number) {
+  constructor(url: string, timeout?: number, apiKey?: string) {
     this.url = url;
     this.client = new QdrantClient({
       url: url,
+      apiKey: apiKey,
       timeout: timeout,
     });
   }

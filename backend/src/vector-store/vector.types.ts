@@ -5,6 +5,7 @@ export type DistanceMetric = 'Cosine' | 'Euclid' | 'Dot';
 
 export interface VectorStorageConfig {
   qdrantUrl: string;
+  apiKey?: string;
   collectionName: string;
   upsertBatchSize: number;
   timeoutMs: number;

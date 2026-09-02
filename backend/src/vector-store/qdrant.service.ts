@@ -47,7 +47,8 @@ export class QdrantVectorService {
     this.config = config;
     this.clientWrapper = new QdrantClientWrapper(
       config.qdrantUrl,
-      config.timeoutMs
+      config.timeoutMs,
+      config.apiKey
     );
   }
 

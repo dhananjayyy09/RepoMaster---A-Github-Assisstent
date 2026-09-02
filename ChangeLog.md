@@ -2,6 +2,38 @@
 
 This file tracks all changes made to the GitHub Knowledge Assistant project by the AI assistant.
 
+## [2026-09-02] Milestone 8B: RAG + Chat API Integration
+
+### Chat API Module & Endpoints
+- **File:** `backend/src/api/chat/chat.validators.ts`
+  - Created Zod validation schemas for creating sessions (`createSessionSchema`), parameter validation (`sessionIdParamsSchema`, `repositoryIdParamsSchema`), sending messages (`sendMessageSchema`), and pagination queries (`listQuerySchema`).
+- **File:** `backend/src/api/chat/chat.controller.ts`
+  - Implemented `createSession`, `getSession`, `listSessionsByRepository`, `listMessages`, `sendMessage`, and `deleteSession`.
+  - Implemented strict message persistence ordering: User message persisted first → RAG execution (`RagService.askQuestion`) → Assistant message persisted with citation sources → Standardized response returned.
+  - Handled user fallback for unauthenticated development environment and repository validation.
+- **File:** `backend/src/api/chat/chat.routes.ts`
+  - Created RESTful routes:
+    - `POST /api/chat/sessions` - Create chat session for a repository
+    - `GET /api/chat/sessions/:sessionId` & `GET /api/chat/:sessionId` - Retrieve session
+    - `DELETE /api/chat/sessions/:sessionId` & `DELETE /api/chat/:sessionId` - Delete session
+    - `GET /api/chat/repositories/:repositoryId/sessions` - List sessions by repository
+    - `GET /api/chat/sessions/:sessionId/messages` & `GET /api/chat/:sessionId/messages` - Retrieve message history
+    - `POST /api/chat/sessions/:sessionId/messages` & `POST /api/chat/:sessionId/messages` - Ask question (RAG execution)
+- **File:** `backend/src/api/routes.ts`
+  - Mounted `chatRouter` at `/chat`.
+- **File:** `backend/src/api/repositories/repositories.routes.ts`
+  - Added `GET /api/repositories/:id/chat` endpoint to list chat sessions associated with a repository.
+- **File:** `backend/src/rag/index.ts`
+  - Exported configured default `ragService` singleton instance wiring `OllamaEmbeddingProvider`, `OllamaAIProvider`, `QdrantVectorService`, `RetrievalService`, `ContextBuilder`, and `PromptBuilder`.
+
+### Testing & Verification
+- **File:** `backend/src/test/chat.api.test.ts`
+  - Added 24 comprehensive unit and integration tests using `supertest` covering session lifecycle, message sending, RAG execution, no-context responses, provider error mappings (502/503/504), chronological history retrieval, and parameter validations.
+- **File:** `backend/src/test/manual-chat-api-verification.ts`
+  - Implemented end-to-end live verification script testing full API flows against real PostgreSQL, Qdrant vector database, and Ollama model.
+- **File:** `backend/package.json`
+  - Added `"verify:chat-api": "tsx src/test/manual-chat-api-verification.ts"`.
+
 ## [2026-09-01] Milestone 8A: Backend API Foundation
 
 ### API Architecture & Middlewares

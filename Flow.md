@@ -2,6 +2,104 @@
 
 This file documents the flow and interactions between different parts of the GitHub Knowledge Assistant codebase.
 
+## Milestone 8B: RAG + Chat API Integration
+
+### Chat API Architecture & Routing
+
+```
+Client (Frontend / cURL)
+    │
+    ▼
+Express App (src/app.ts)
+    │
+    ▼
+apiRouter (src/api/routes.ts) mounted at `/api`
+    │
+    ├── /repositories → repositoriesRouter (including GET /:id/chat)
+    ├── /indexing     → indexingRouter
+    └── /chat         → chatRouter
+            ├── POST   /sessions
+            ├── GET    /sessions/:sessionId (or /:sessionId)
+            ├── DELETE /sessions/:sessionId (or /:sessionId)
+            ├── GET    /repositories/:repositoryId/sessions
+            ├── GET    /sessions/:sessionId/messages (or /:sessionId/messages)
+            └── POST   /sessions/:sessionId/messages (or /:sessionId/messages)
+```
+
+### End-to-End Chat & RAG Request Flow (POST /api/chat/:sessionId/messages)
+
+```
+POST /api/chat/:sessionId/messages { "question": "..." }
+    │
+    ▼
+1. Validation Middleware: validateParams(sessionIdParamsSchema) + validateBody(sendMessageSchema)
+    │
+    ├── Invalid UUID / Empty / Whitespace / Oversized (>4096) → 400 Bad Request
+    └── Valid → Controller invocation
+    │
+    ▼
+2. ChatController.sendMessage
+    │
+    ├── Verify ChatSession exists: chatService.getChatSessionById(sessionId)
+    │       └── Missing? → 404 NotFoundError
+    │
+    ├── 3. Persist User Message:
+    │       chatService.createMessage({ role: USER, content: question })
+    │
+    ├── 4. Execute RAG Pipeline:
+    │       ragService.askQuestion({ repositoryId: session.repositoryId, question })
+    │           ├── EmbeddingService.embedText(question)
+    │           ├── RetrievalService.search(queryVector, repositoryId) [Qdrant]
+    │           ├── ContextBuilder.build(retrievedChunks)
+    │           ├── PromptBuilder.build(question, context)
+    │           └── AIService.generate(prompt) [Ollama]
+    │
+    ├── 5. Persist Assistant Message:
+    │       chatService.createMessage({ role: ASSISTANT, content: answer, sources })
+    │
+    ▼
+6. Returns Standardized JSON Response (200 OK):
+{
+    "success": true,
+    "data": {
+        "sessionId": "...",
+        "question": "...",
+        "answer": "...",
+        "sources": [ ... ],
+        "userMessage": { "id": "...", "role": "USER", ... },
+        "assistantMessage": { "id": "...", "role": "ASSISTANT", "sources": [ ... ], ... }
+    }
+}
+```
+
+### Chat History Retrieval Flow (GET /api/chat/:sessionId/messages)
+
+```
+GET /api/chat/:sessionId/messages?skip=0&take=50
+    │
+    ▼
+1. Validation: validateParams(sessionIdParamsSchema) + validateQuery(listQuerySchema)
+    │
+2. ChatController.listMessages
+    │
+    ├── Verify ChatSession exists: chatService.getChatSessionById(sessionId)
+    │       └── Missing? → 404 NotFoundError
+    │
+    ├── Retrieve Messages:
+    │       chatService.getMessagesByChatSession(sessionId, { skip, take })
+    │       └── Orders by `createdAt ASC` (chronological order)
+    │
+    ▼
+3. Returns Standardized JSON Response (200 OK):
+{
+    "success": true,
+    "data": [
+        { "id": "...", "role": "USER", "content": "...", "createdAt": "..." },
+        { "id": "...", "role": "ASSISTANT", "content": "...", "sources": [ ... ], "createdAt": "..." }
+    ]
+}
+```
+
 ## Milestone 8A: Backend API Foundation
 
 ### API Architecture Flow
